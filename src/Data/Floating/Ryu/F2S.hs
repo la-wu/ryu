@@ -1,13 +1,14 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module Lib
+module Data.Floating.Ryu.F2S
     ( f2s
     ) where
 
+import Debug.Trace
 import Data.Array
 import Data.Bits.Floating
 import Data.Bits
-import Data.Char (chr, ord)
+import Data.Floating.Ryu.Common
 import Data.Int (Int32)
 import Control.Lens
 import GHC.Word (Word32, Word64)
@@ -52,71 +53,16 @@ float_pow5_split = listArray (0, 46)
     , 1292469707114105741 , 1615587133892632177 , 2019483917365790221
     ]
 
-(.>>) :: Bits a => a -> Word32 -> a
-a .>> s = shiftR a (fromIntegral s)
-
-(.<<) :: Bits a => a -> Word32 -> a
-a .<< s = shiftL a (fromIntegral s)
-
-mask :: Word32 -> Word32
-mask = flip (-) 1 . (.<<) 1
-
-special :: Bool -> Bool -> Bool   ->   String
-special    _       _       True   =    "NaN"
-special    True    False   _      =    "-0E0"
-special    False   False   _      =    "0E0"
-special    True    True    _      =    "-Infinity"
-special    False   True    _      =    "Infinity"
-
 data FloatingDecimal = FloatingDecimal
     { mantissa :: Word32
     , exponent :: Int32
     } deriving (Show, Eq)
-
-asWord :: Integral w => Bool -> w
-asWord = fromIntegral . fromEnum
 
 toS :: Word32 -> Int32
 toS = fromIntegral
 
 toU :: Int32 -> Word32
 toU = fromIntegral
-
--- Returns the number of decimal digits in v, which must not contain more than 9 digits.
-decimalLength9 :: Integral a => a -> Int
-decimalLength9 v
-  | v >= 100000000 = 9
-  | v >= 10000000 = 8
-  | v >= 1000000 = 7
-  | v >= 100000 = 6
-  | v >= 10000 = 5
-  | v >= 1000 = 4
-  | v >= 100 = 3
-  | v >= 10 = 2
-  | otherwise = 1
-
--- Returns e == 0 ? 1 : ceil(log_2(5^e)); requires 0 <= e <= 3528.
-pow5bits :: (Bits a, Integral a) => a -> a
-pow5bits e = (e * 1217359) .>> 19 + 1
-
--- Returns floor(log_10(2^e)); requires 0 <= e <= 1650.
-log10pow2 :: (Bits a, Integral a) => a -> a
-log10pow2 e = (e * 78913) .>> 18
-
--- Returns floor(log_10(5^e)); requires 0 <= e <= 2620.
-log10pow5 :: (Bits a, Integral a) => a -> a
-log10pow5 e = (e * 732928) .>> 20
-
-pow5factor :: Word32 -> Word32
-pow5factor value
-  | value `mod` 5 /= 0 = 0
-  | otherwise = 1 + (pow5factor $ value `div` 5)
-
-multipleOfPowerOf5 :: Word32 -> Word32 -> Bool
-multipleOfPowerOf5 value p = pow5factor value >= p
-
-multipleOfPowerOf2 :: Word32 -> Word32 -> Bool
-multipleOfPowerOf2 value p = value .&. mask p == 0
 
 mulShift32 :: Word32 -> Word64 -> Int32 -> Word32
 mulShift32 m factor shift =
@@ -131,8 +77,8 @@ mulShift32 m factor shift =
 mulPow5InvDivPow2 :: Word32 -> Word32 -> Int32 -> Word32
 mulPow5InvDivPow2 m q j = mulShift32 m (float_pow5_inv_split ! q) j
 
-mulPow5divPow2 :: Word32 -> Word32 -> Int32 -> Word32
-mulPow5divPow2 m i j = mulShift32 m (float_pow5_split ! i) j
+mulPow5DivPow2 :: Word32 -> Word32 -> Int32 -> Word32
+mulPow5DivPow2 m i j = mulShift32 m (float_pow5_split ! i) j
 
 acceptBounds :: Word32 -> Bool
 acceptBounds v = v `div` 4 .&. 1 == 0
@@ -196,13 +142,13 @@ f2dLT e2 u v w =
         i = -e2 - toS q
         k = pow5bits i - float_pow5_bitcount
         j = toS q - k
-        vu = mulPow5divPow2 u (toU i) j
-        vv = mulPow5divPow2 v (toU i) j
-        vw = mulPow5divPow2 w (toU i) j
+        vu = mulPow5DivPow2 u (toU i) j
+        vv = mulPow5DivPow2 v (toU i) j
+        vw = mulPow5DivPow2 w (toU i) j
         lastRemovedDigit =
             if q /= 0 && (vw - 1) `div` 10 <= vu `div` 10
                then let j = toS q - 1 - (pow5bits (i + 1) - float_pow5_bitcount)
-                     in (mulPow5divPow2 v (toU $ i + 1) j) `mod` 10
+                     in (mulPow5DivPow2 v (toU $ i + 1) j) `mod` 10
                else 0
         (vvIsTrailingZeros, vuIsTrailingZeros, vw') =
             case () of
@@ -251,16 +197,6 @@ f2d m e =
                                                 & (vuIsTrailingZeros %~ reset)
         exp = e10 + removed + removed'
      in FloatingDecimal output exp
-
-apply :: (a -> b) -> (a -> a) -> a -> [b]
-apply f next x = f x : apply f next (next x)
-
-lastDigitToChar :: (Integral a) => a -> Char
-lastDigitToChar = chr . fromIntegral . (+) (fromIntegral $ ord '0') . flip mod 10
-
-prependIf :: Bool -> a -> [a] -> [a]
-prependIf True x xs = x : xs
-prependIf False _ xs = xs
 
 -- TODO: optimize
 toChars :: FloatingDecimal -> String

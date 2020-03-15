@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import Data.Floating.Ryu
 
 main :: IO ()
 main = return ()

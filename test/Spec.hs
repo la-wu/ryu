@@ -1,10 +1,41 @@
-import Lib
+import Data.Floating.Ryu
+import Data.Floating.Ryu.Common
+import Data.Bits
 import Data.Bits.Floating (coerceToFloat)
+import Data.Int (Int32)
+import GHC.Word (Word32, Word64)
 import Test.Hspec
 import Test.QuickCheck
 
 main :: IO ()
 main = hspec $ do
+    describe "common" $ do
+        it "decimalLength9" $ do
+            decimalLength9 0 `shouldBe` 1
+            decimalLength9 1 `shouldBe` 1
+            decimalLength9 9 `shouldBe` 1
+            decimalLength9 10 `shouldBe` 2
+            decimalLength9 99 `shouldBe` 2
+            decimalLength9 100 `shouldBe` 3
+            decimalLength9 999 `shouldBe` 3
+            decimalLength9 999999999 `shouldBe` 9
+
+        it "log10pow2" $ do
+            log10pow2 0 `shouldBe` (0 :: Word32)
+            log10pow2 1 `shouldBe` (0 :: Word32)
+            log10pow2 2 `shouldBe` (0 :: Word32)
+            log10pow2 3 `shouldBe` (0 :: Word32)
+            log10pow2 4 `shouldBe` (1 :: Word32)
+            log10pow2 1650 `shouldBe` (496 :: Word32)
+
+        it "log10pow5" $ do
+            log10pow5 0 `shouldBe` (0 :: Word32)
+            log10pow5 1 `shouldBe` (0 :: Word32)
+            log10pow5 2 `shouldBe` (1 :: Word32)
+            log10pow5 3 `shouldBe` (2 :: Word32)
+            log10pow5 4 `shouldBe` (2 :: Word32)
+            log10pow5 2620 `shouldBe` (1831 :: Word32)
+
     describe "f2s" $ do
         it "basic" $ do
             f2s 0.0    `shouldBe` "0E0"
