@@ -24,6 +24,7 @@ dependencies:
 - array
 - floating-bits
 - lens
+- wide-word
 
 library:
   source-dirs: src

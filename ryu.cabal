@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 14de90a43d4057f71e68672f1ebe524a1ccabe406fc6c3dd7fafe787fd892c50
+-- hash: 69f4d7f4a5c79bf4494e381f375488348de53bb21c3d2d4101838adff312a38c
 
 name:           ryu
 version:        0.1.0.0
@@ -29,6 +29,7 @@ library
   exposed-modules:
       Data.Floating.Ryu
       Data.Floating.Ryu.Common
+      Data.Floating.Ryu.D2S
       Data.Floating.Ryu.F2S
   other-modules:
       Paths_ryu
@@ -39,6 +40,7 @@ library
     , base >=4.7 && <5
     , floating-bits
     , lens
+    , wide-word
   default-language: Haskell2010
 
 executable ryu-exe
@@ -54,6 +56,7 @@ executable ryu-exe
     , floating-bits
     , lens
     , ryu
+    , wide-word
   default-language: Haskell2010
 
 test-suite ryu-test
@@ -72,4 +75,5 @@ test-suite ryu-test
     , hspec
     , lens
     , ryu
+    , wide-word
   default-language: Haskell2010
