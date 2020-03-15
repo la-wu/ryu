@@ -209,17 +209,18 @@ f2dLT e2 u v w =
               _ | q <= 1 && acceptBounds v -> (True, w - v == 2, vw) -- mmShift == 1
                 | q <= 1                   -> (True, False, vw - 1)
                 | q < 31                   -> (multipleOfPowerOf2 v (q - 1), False, vw)
+                | otherwise                -> (False, False, vw)
      in (BoundsState v vu vv vw' lastRemovedDigit vuIsTrailingZeros vvIsTrailingZeros, e10)
 
-calculate :: Bool -> BoundsState -> (Word32, Int32)
-calculate b d
+calculate :: BoundsState -> (Word32, Int32)
+calculate d
   = let (d', r) = if d ^. vuIsTrailingZeros
                      then clear' (\d -> d ^. vu `mod` 10 == 0) d
                      else (d, 0)
         d'' = if d' ^. vvIsTrailingZeros && d' ^. lastRemovedDigit == 5 && d' ^. vv `mod` 2 == 0
                  then d' & lastRemovedDigit .~ 4
                  else d'
-        roundUp = _vv d'' == _vu d'' && (not b || not (acceptBounds $ _v d'') || not (_vuIsTrailingZeros d''))
+        roundUp = _vv d'' == _vu d'' && (not (acceptBounds $ _v d'') || not (_vuIsTrailingZeros d''))
                     || _lastRemovedDigit d'' >= 5
      in (_vv d'' + asWord roundUp, r)
 
@@ -244,7 +245,10 @@ f2d m e =
         -- Step 4: Find the shortest decimal representation in the interval of
         -- valid representations.
         (state', removed) = clear state
-        (output, removed') = calculate (_vvIsTrailingZeros state || _vuIsTrailingZeros state) state'
+        general = _vvIsTrailingZeros state || _vuIsTrailingZeros state
+        reset = if general then id else const False
+        (output, removed') = calculate $ state' & (vvIsTrailingZeros %~ reset)
+                                                & (vuIsTrailingZeros %~ reset)
         exp = e10 + removed + removed'
      in FloatingDecimal output exp
 
@@ -266,7 +270,8 @@ toChars fd@(FloatingDecimal mantissa exponent) =
         serialize l = reverse . foldr (:) "" . take l . apply lastDigitToChar (flip div 10)
         front = serialize olength mantissa
         exp = exponent + fromIntegral olength - 1
-        back = 'E' : (prependIf (exp < 0) '-' (serialize (decimalLength9 exp) . toU . abs $ exp))
+        exp' = abs exp
+        back = 'E' : (prependIf (exp < 0) '-' (serialize (decimalLength9 exp') . toU $ exp'))
      in if olength > 1
            then head front : '.' : tail front ++ back
            else front ++ back

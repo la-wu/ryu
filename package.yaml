@@ -49,3 +49,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - ryu
+    - hspec
+    - QuickCheck
