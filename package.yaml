@@ -53,3 +53,15 @@ tests:
     - ryu
     - hspec
     - QuickCheck
+
+benchmarks:
+  ryu-bench:
+    main:                Bench.hs
+    source-dirs:         bench
+    ghc-options:
+    - -O2
+    dependencies:
+    - ryu
+    - criterion
+    - deepseq
+    - random

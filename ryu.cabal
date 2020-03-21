@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a44e192de4e4cc54605cc6ff434b473f962a42db15df1c61576528d050c00961
+-- hash: c12910182cae9c7bb07b6de1ab345298ebd7228fbed3bf20c0d79865214bbb0a
 
 name:           ryu
 version:        0.1.0.0
@@ -54,6 +54,7 @@ executable ryu-exe
   build-depends:
       array
     , base >=4.7 && <5
+    , bytestring
     , floating-bits
     , lens
     , ryu
@@ -72,9 +73,31 @@ test-suite ryu-test
       QuickCheck
     , array
     , base >=4.7 && <5
+    , bytestring
     , floating-bits
     , hspec
     , lens
+    , ryu
+    , wide-word
+  default-language: Haskell2010
+
+benchmark ryu-bench
+  type: exitcode-stdio-1.0
+  main-is: Bench.hs
+  other-modules:
+      Paths_ryu
+  hs-source-dirs:
+      bench
+  ghc-options: -O2
+  build-depends:
+      array
+    , base >=4.7 && <5
+    , bytestring
+    , criterion
+    , deepseq
+    , floating-bits
+    , lens
+    , random
     , ryu
     , wide-word
   default-language: Haskell2010

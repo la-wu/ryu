@@ -3,6 +3,7 @@
 
 module Data.Floating.Ryu.F2S
     ( f2s
+    , f2s'
     ) where
 
 import Debug.Trace
@@ -200,11 +201,21 @@ f2d m e =
         exp = e10 + removed + removed'
      in FloatingDecimal output exp
 
+breakdown :: Float -> (Bool, Word32, Word32)
+breakdown f = let bits = coerceToWord f
+                  sign = ((bits .>> (float_mantissa_bits + float_exponent_bits)) .&. 1) /= 0
+                  mantissa = bits .&. mask float_mantissa_bits
+                  exponent = (bits .>> float_mantissa_bits) .&. mask float_exponent_bits
+                in (sign, mantissa, exponent)
+
+f2s' :: Float -> FloatingDecimal
+f2s' f = let (sign, mantissa, exponent) = breakdown f
+          in if (exponent == mask float_exponent_bits) || (exponent == 0 && mantissa == 0)
+               then FloatingDecimal mantissa (fromIntegral exponent)
+               else f2d mantissa exponent
+
 f2s :: Float -> String
-f2s f = let bits = coerceToWord f
-            sign = ((bits .>> (float_mantissa_bits + float_exponent_bits)) .&. 1) /= 0
-            mantissa = bits .&. mask float_mantissa_bits
-            exponent = (bits .>> float_mantissa_bits) .&. mask float_exponent_bits
+f2s f = let (sign, mantissa, exponent) = breakdown f
          in if (exponent == mask float_exponent_bits) || (exponent == 0 && mantissa == 0)
                then special sign (exponent > 0) (mantissa > 0)
                else let FloatingDecimal m e = f2d mantissa exponent
