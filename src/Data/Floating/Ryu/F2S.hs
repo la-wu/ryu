@@ -1,13 +1,15 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE Strict, StrictData #-}
 
 module Data.Floating.Ryu.F2S
     ( f2s
     ) where
 
 import Debug.Trace
-import Data.Array
+import Data.Array.Unboxed
 import Data.Bits.Floating
 import Data.Bits
+import Data.Char (ord)
 import Data.Floating.Ryu.Common
 import Data.Int (Int32)
 import Control.Lens
@@ -25,7 +27,7 @@ float_bias = 127
 float_pow5_inv_bitcount = 59
 float_pow5_bitcount = 61
 
-float_pow5_inv_split :: Array Word32 Word64
+float_pow5_inv_split :: UArray Word32 Word64
 float_pow5_inv_split = listArray (0, 30)
     [ 576460752303423489 , 461168601842738791 , 368934881474191033 , 295147905179352826
     , 472236648286964522 , 377789318629571618 , 302231454903657294 , 483570327845851670
@@ -37,7 +39,7 @@ float_pow5_inv_split = listArray (0, 30)
     , 570899077082383953 , 456719261665907162 , 365375409332725730
     ]
 
-float_pow5_split :: Array Word32 Word64
+float_pow5_split :: UArray Word32 Word64
 float_pow5_split = listArray (0, 46)
     [ 1152921504606846976 , 1441151880758558720 , 1801439850948198400 , 2251799813685248000
     , 1407374883553280000 , 1759218604441600000 , 2199023255552000000 , 1374389534720000000
@@ -198,20 +200,6 @@ f2d m e =
         exp = e10 + removed + removed'
      in FloatingDecimal output exp
 
--- TODO: optimize
-toChars :: FloatingDecimal -> String
-toChars fd@(FloatingDecimal mantissa exponent) =
-    let olength = decimalLength9 mantissa
-        serialize :: Int -> Word32 -> String
-        serialize l = reverse . foldr (:) "" . take l . apply lastDigitToChar (flip div 10)
-        front = serialize olength mantissa
-        exp = exponent + fromIntegral olength - 1
-        exp' = abs exp
-        back = 'E' : (prependIf (exp < 0) '-' (serialize (decimalLength9 exp') . toU $ exp'))
-     in if olength > 1
-           then head front : '.' : tail front ++ back
-           else front ++ back
-
 f2s :: Float -> String
 f2s f = let bits = coerceToWord f
             sign = ((bits .>> (float_mantissa_bits + float_exponent_bits)) .&. 1) /= 0
@@ -219,5 +207,6 @@ f2s f = let bits = coerceToWord f
             exponent = (bits .>> float_mantissa_bits) .&. mask float_exponent_bits
          in if (exponent == mask float_exponent_bits) || (exponent == 0 && mantissa == 0)
                then special sign (exponent > 0) (mantissa > 0)
-               else prependIf sign '-' $ toChars (f2d mantissa exponent)
+               else let FloatingDecimal m e = f2d mantissa exponent
+                     in prependIf sign '-' $ toChars m e
 

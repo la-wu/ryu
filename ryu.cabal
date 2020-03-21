@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 69f4d7f4a5c79bf4494e381f375488348de53bb21c3d2d4101838adff312a38c
+-- hash: a44e192de4e4cc54605cc6ff434b473f962a42db15df1c61576528d050c00961
 
 name:           ryu
 version:        0.1.0.0
@@ -38,6 +38,7 @@ library
   build-depends:
       array
     , base >=4.7 && <5
+    , bytestring
     , floating-bits
     , lens
     , wide-word

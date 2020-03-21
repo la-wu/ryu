@@ -26,7 +26,8 @@ double_bias = 1023
 
 double_pow5_bitcount = 125
 double_pow5_inv_bitcount = 125
- 
+
+-- TODO: UArray. Something about the constuctor is hidden
 double_pow5_inv_split :: Array Word64 Word128
 double_pow5_inv_split = listArray (0, 341)
     [ Word128  2305843009213693952                    1, Word128  1844674407370955161 11068046444225730970
@@ -527,20 +528,6 @@ d2d m e =
         exp = e10 + removed + removed'
      in FloatingDecimal output exp
 
--- TODO: optimize
-toChars :: FloatingDecimal -> String
-toChars fd@(FloatingDecimal mantissa exponent) =
-    let olength = decimalLength17 mantissa
-        serialize :: Int -> Word64 -> String
-        serialize l = reverse . foldr (:) "" . take l . apply lastDigitToChar (flip div 10)
-        front = serialize olength mantissa
-        exp = exponent + fromIntegral olength - 1
-        exp' = abs exp
-        back = 'E' : (prependIf (exp < 0) '-' (serialize (decimalLength9 exp') . fromIntegral $ exp'))
-     in if olength > 1
-           then head front : '.' : tail front ++ back
-           else front ++ back
-
 d2s :: Double -> String
 d2s d = let bits = coerceToWord d :: Word64
             sign = ((bits .>> (double_mantissa_bits + double_exponent_bits)) .&. 1) /= 0
@@ -549,6 +536,6 @@ d2s d = let bits = coerceToWord d :: Word64
          in if (exponent == mask double_exponent_bits) || (exponent == 0 && mantissa == 0)
                then special sign (exponent > 0) (mantissa > 0)
                else let v = unifySmallTrailing <$> d2dSmallInt mantissa (fromIntegral exponent)
-                        v' = fromMaybe (d2d mantissa (fromIntegral exponent)) v
-                     in prependIf sign '-' $ toChars v'
+                        FloatingDecimal m e = fromMaybe (d2d mantissa (fromIntegral exponent)) v
+                     in prependIf sign '-' $ toChars m e
 
