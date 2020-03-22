@@ -1,8 +1,10 @@
 import Control.DeepSeq
 import Criterion.Main
 import Data.Bits.Floating (coerceToFloat)
+import qualified Data.ByteString.Internal as BS
 import Data.Floating.Ryu
 import Data.Floating.Ryu.F2S
+import Data.Floating.Ryu.Common
 import GHC.Word (Word32, Word64)
 import System.Random
 import Numeric
@@ -29,7 +31,9 @@ main = do
             , bench "large" $ strength (fmap mapper) large
             ]
     defaultMain
-        [ bgroup "f2s'" $ suite nf f2s'
+        [ bgroup "f2Intermediate" $ suite nf f2Intermediate
         , bgroup "f2s" $ suite nf f2s
+        , bgroup "f2sO" $ suite nf (f2s' toChars' id)
+        , bgroup "f2sBS" $ suite nf (f2s' toCharsBS BS.packChars)
         , bgroup "showEFloat" $ suite nf (flip (showEFloat Nothing) [])
         ]

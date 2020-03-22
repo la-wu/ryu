@@ -4,6 +4,7 @@
 module Data.Floating.Ryu.F2S
     ( f2s
     , f2s'
+    , f2Intermediate
     , FloatingDecimal(..)
     ) where
 
@@ -209,16 +210,20 @@ breakdown f = let bits = coerceToWord f
                   exponent = (bits .>> float_mantissa_bits) .&. mask float_exponent_bits
                 in (sign, mantissa, exponent)
 
-f2s' :: Float -> FloatingDecimal
-f2s' f = let (sign, mantissa, exponent) = breakdown f
-          in if (exponent == mask float_exponent_bits) || (exponent == 0 && mantissa == 0)
-               then FloatingDecimal mantissa (fromIntegral exponent)
-               else f2d mantissa exponent
+f2Intermediate :: Float -> FloatingDecimal
+f2Intermediate f = let (sign, mantissa, exponent) = breakdown f
+                    in if (exponent == mask float_exponent_bits) || (exponent == 0 && mantissa == 0)
+                          then FloatingDecimal mantissa (fromIntegral exponent)
+                          else f2d mantissa exponent
+
+f2s' :: (Bool -> Word32 -> Int32 -> a) -> (String -> a) -> Float -> a
+f2s' formatter back f =
+    let (sign, mantissa, exponent) = breakdown f
+     in if (exponent == mask float_exponent_bits) || (exponent == 0 && mantissa == 0)
+           then back $ special sign (exponent > 0) (mantissa > 0)
+           else let FloatingDecimal m e = f2d mantissa exponent
+                 in formatter sign m e
 
 f2s :: Float -> String
-f2s f = let (sign, mantissa, exponent) = breakdown f
-         in if (exponent == mask float_exponent_bits) || (exponent == 0 && mantissa == 0)
-               then special sign (exponent > 0) (mantissa > 0)
-               else let FloatingDecimal m e = f2d mantissa exponent
-                     in prependIf sign '-' $ toChars m e
+f2s = f2s' toChars id
 

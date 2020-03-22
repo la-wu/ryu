@@ -2,6 +2,9 @@
 
 module Data.Floating.Ryu.D2S
     ( d2s
+    , d2s'
+    , d2Intermediate
+    , FloatingDecimal(..)
     ) where
 
 import Debug.Trace
@@ -528,14 +531,29 @@ d2d m e =
         exp = e10 + removed + removed'
      in FloatingDecimal output exp
 
+breakdown :: Double -> (Bool, Word64, Word64)
+breakdown f = let bits = coerceToWord f
+                  sign = ((bits .>> (double_mantissa_bits + double_exponent_bits)) .&. 1) /= 0
+                  mantissa = bits .&. mask double_mantissa_bits
+                  exponent = (bits .>> double_mantissa_bits) .&. mask double_exponent_bits
+                in (sign, mantissa, exponent)
+
+d2Intermediate :: Double -> FloatingDecimal
+d2Intermediate d = let (sign, mantissa, exponent) = breakdown d
+                    in if (exponent == mask double_exponent_bits) || (exponent == 0 && mantissa == 0)
+                          then FloatingDecimal mantissa (fromIntegral exponent)
+                          else let v = unifySmallTrailing <$> d2dSmallInt mantissa (fromIntegral exponent)
+                                in fromMaybe (d2d mantissa (fromIntegral exponent)) v
+
+d2s' :: (Bool -> Word64 -> Int32 -> a) -> (String -> a) -> Double -> a
+d2s' formatter back d =
+    let (sign, mantissa, exponent) = breakdown d
+     in if (exponent == mask double_exponent_bits) || (exponent == 0 && mantissa == 0)
+           then back $ special sign (exponent > 0) (mantissa > 0)
+           else let v = unifySmallTrailing <$> d2dSmallInt mantissa (fromIntegral exponent)
+                    FloatingDecimal m e = fromMaybe (d2d mantissa (fromIntegral exponent)) v
+                 in formatter sign m e
+
 d2s :: Double -> String
-d2s d = let bits = coerceToWord d :: Word64
-            sign = ((bits .>> (double_mantissa_bits + double_exponent_bits)) .&. 1) /= 0
-            mantissa = bits .&. mask double_mantissa_bits
-            exponent = (bits .>> double_mantissa_bits) .&. mask double_exponent_bits
-         in if (exponent == mask double_exponent_bits) || (exponent == 0 && mantissa == 0)
-               then special sign (exponent > 0) (mantissa > 0)
-               else let v = unifySmallTrailing <$> d2dSmallInt mantissa (fromIntegral exponent)
-                        FloatingDecimal m e = fromMaybe (d2d mantissa (fromIntegral exponent)) v
-                     in prependIf sign '-' $ toChars m e
+d2s = d2s' toChars id
 
