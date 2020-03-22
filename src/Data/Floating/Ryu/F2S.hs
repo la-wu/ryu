@@ -4,6 +4,7 @@
 module Data.Floating.Ryu.F2S
     ( f2s
     , f2s'
+    , FloatingDecimal(..)
     ) where
 
 import Debug.Trace

@@ -15,6 +15,9 @@ floats n l u = fmap ( force
                     . fmap ((flip (/) 0xFFFFFFFF) . fromIntegral))
              $ sequence [randomIO :: IO Word32 | _ <- [1..n]]
 
+instance NFData Data.Floating.Ryu.F2S.FloatingDecimal where
+    rnf (Data.Floating.Ryu.F2S.FloatingDecimal mantissa exponent) = rnf mantissa `seq` rnf exponent
+
 main :: IO ()
 main = do
     tenths <- floats 30 0.1 1
@@ -26,7 +29,7 @@ main = do
             , bench "large" $ strength (fmap mapper) large
             ]
     defaultMain
-        [ bgroup "f2s'" $ suite whnf f2s'
+        [ bgroup "f2s'" $ suite nf f2s'
         , bgroup "f2s" $ suite nf f2s
         , bgroup "showEFloat" $ suite nf (flip (showEFloat Nothing) [])
         ]
