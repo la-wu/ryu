@@ -5,6 +5,7 @@ module Data.Floating.Ryu.Common
     , (.<<)
     , mask
     , asWord
+    , pmap
     , special
     , decimalLength9
     , decimalLength17
@@ -47,6 +48,9 @@ mask = flip (-) 1 . (.<<) 1
 
 asWord :: Integral w => Bool -> w
 asWord = fromIntegral . fromEnum
+
+pmap :: (a -> c) -> (a, b) -> (c, b)
+pmap f (a, b) = (f a, b)
 
 -- Returns the number of decimal digits in v, which must not contain more than 9 digits.
 decimalLength9 :: Integral a => a -> Int

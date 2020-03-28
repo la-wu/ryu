@@ -89,8 +89,7 @@ acceptBounds :: Word32 -> Bool
 acceptBounds v = v `div` 4 .&. 1 == 0
 
 data BoundsState = BoundsState
-    { _v :: Word32
-    , _vu :: Word32
+    { _vu :: Word32
     , _vv :: Word32
     , _vw :: Word32
     , _lastRemovedDigit :: Word32
@@ -100,19 +99,47 @@ data BoundsState = BoundsState
 
 makeLenses ''BoundsState
 
-clear' :: (BoundsState -> Bool) -> BoundsState -> (BoundsState, Int32)
-clear' f d
-  | f d = fmap ((+) 1) . clear' f $
-                d & vu %~ flip div 10
-                  & vv %~ flip div 10
-                  & vw %~ flip div 10
-                  & lastRemovedDigit .~ (d ^. vv `mod` 10)
-                  & vuIsTrailingZeros .~ (d ^. vu `mod` 10 == 0)
-                  & vvIsTrailingZeros .~ (d ^. lastRemovedDigit == 0)
+differ :: BoundsState -> Bool
+differ d = d ^. vw `div` 10 > d ^. vu `div` 10
+
+removeDigit :: BoundsState -> BoundsState
+removeDigit = (vu %~ flip div 10)
+            . (vv %~ flip div 10)
+            . (vw %~ flip div 10)
+            . (\d -> d & lastRemovedDigit .~ (d ^. vv `mod` 10))
+
+trimTrailing' :: BoundsState -> (BoundsState, Int32)
+trimTrailing' d
+  | differ d =
+      fmap ((+) 1) . trimTrailing' $
+          d & removeDigit
+            & vuIsTrailingZeros .~ (d ^. vu `mod` 10 == 0)
+            & vvIsTrailingZeros .~ (d ^. lastRemovedDigit == 0)
   | otherwise = (d, 0)
 
-clear :: BoundsState -> (BoundsState, Int32)
-clear = clear' (\d -> d ^. vw `div` 10 > d ^. vu `div` 10)
+trimTrailing'' :: BoundsState -> (BoundsState, Int32)
+trimTrailing'' d
+  | d ^. vu `mod` 10 == 0 =
+      fmap ((+) 1) . trimTrailing'' $
+          d & removeDigit
+            & vvIsTrailingZeros .~ (d ^. lastRemovedDigit == 0)
+  | otherwise = (d, 0)
+
+trimTrailing :: BoundsState -> (BoundsState, Int32)
+trimTrailing d
+  = let (d', r) = trimTrailing' d
+        (d'', r') = if d' ^. vuIsTrailingZeros
+                       then trimTrailing'' d'
+                       else (d', 0)
+        forceDown = if d'' ^. vvIsTrailingZeros && d'' ^. lastRemovedDigit == 5 && d'' ^. vv `mod` 2 == 0
+                       then lastRemovedDigit .~ 4
+                       else id
+     in (forceDown d'', r + r')
+
+trimNoTrailing :: BoundsState -> (BoundsState, Int32)
+trimNoTrailing d
+  | differ d = fmap ((+) 1) . trimNoTrailing $ d & removeDigit
+  | otherwise = (d, 0)
 
 f2dGT :: Int32 -> Word32 -> Word32 -> Word32 -> (BoundsState, Int32)
 f2dGT e2 u v w =
@@ -138,7 +165,7 @@ f2dGT e2 u v w =
                 | q <= 9 && acceptBounds v -> (False, multipleOfPowerOf5_32 u q, vw)
                 | q <= 9                   -> (False, False, vw - asWord (multipleOfPowerOf5_32 w q))
                 | otherwise                -> (False, False, vw)
-     in (BoundsState v vu vv vw' lastRemovedDigit vuIsTrailingZeros vvIsTrailingZeros, e10)
+     in (BoundsState vu vv vw' lastRemovedDigit vuIsTrailingZeros vvIsTrailingZeros, e10)
 
 f2dLT :: Int32 -> Word32 -> Word32 -> Word32 -> (BoundsState, Int32)
 f2dLT e2 u v w =
@@ -161,19 +188,13 @@ f2dLT e2 u v w =
                 | q <= 1                   -> (True, False, vw - 1)
                 | q < 31                   -> (multipleOfPowerOf2 v (q - 1), False, vw)
                 | otherwise                -> (False, False, vw)
-     in (BoundsState v vu vv vw' lastRemovedDigit vuIsTrailingZeros vvIsTrailingZeros, e10)
+     in (BoundsState vu vv vw' lastRemovedDigit vuIsTrailingZeros vvIsTrailingZeros, e10)
 
-calculate :: BoundsState -> (Word32, Int32)
-calculate d
-  = let (d', r) = if d ^. vuIsTrailingZeros
-                     then clear' (\d -> d ^. vu `mod` 10 == 0) d
-                     else (d, 0)
-        d'' = if d' ^. vvIsTrailingZeros && d' ^. lastRemovedDigit == 5 && d' ^. vv `mod` 2 == 0
-                 then d' & lastRemovedDigit .~ 4
-                 else d'
-        roundUp = _vv d'' == _vu d'' && (not (acceptBounds $ _v d'') || not (_vuIsTrailingZeros d''))
-                    || _lastRemovedDigit d'' >= 5
-     in (_vv d'' + asWord roundUp, r)
+roundUp :: Bool -> BoundsState -> Bool
+roundUp b s = (s ^. vv == s ^. vu && b) || s ^. lastRemovedDigit >= 5
+
+calculate :: Bool -> BoundsState -> Word32
+calculate b s = s ^. vv + asWord (roundUp b s)
 
 f2d :: Word32 -> Word32 -> FloatingDecimal
 f2d m e =
@@ -195,12 +216,13 @@ f2d m e =
                else f2dLT e2 u v w
         -- Step 4: Find the shortest decimal representation in the interval of
         -- valid representations.
-        (state', removed) = clear state
-        general = _vvIsTrailingZeros state || _vuIsTrailingZeros state
-        reset = if general then id else const False
-        (output, removed') = calculate $ state' & (vvIsTrailingZeros %~ reset)
-                                                & (vuIsTrailingZeros %~ reset)
-        exp = e10 + removed + removed'
+        (output, removed) =
+            if _vvIsTrailingZeros state || _vuIsTrailingZeros state
+               then pmap (\s -> calculate (not (acceptBounds v)
+                                        || not (s ^. vuIsTrailingZeros)) s)
+                                          $ trimTrailing state
+               else pmap (calculate True) $ trimNoTrailing state
+        exp = e10 + removed
      in FloatingDecimal output exp
 
 breakdown :: Float -> (Bool, Word32, Word32)
