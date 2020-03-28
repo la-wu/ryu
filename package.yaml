@@ -60,6 +60,8 @@ benchmarks:
     source-dirs:         bench
     ghc-options:
     - -O2
+    - -funbox-strict-fields
+    - -rtsopts
     dependencies:
     - ryu
     - criterion

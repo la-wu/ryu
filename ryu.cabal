@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c12910182cae9c7bb07b6de1ab345298ebd7228fbed3bf20c0d79865214bbb0a
+-- hash: cb5298a6405cea7513e15148a9c6aa6a0afdf2d17ea0f5887346038859e0db94
 
 name:           ryu
 version:        0.1.0.0
@@ -88,7 +88,7 @@ benchmark ryu-bench
       Paths_ryu
   hs-source-dirs:
       bench
-  ghc-options: -O2
+  ghc-options: -O2 -funbox-strict-fields -rtsopts
   build-depends:
       array
     , base >=4.7 && <5

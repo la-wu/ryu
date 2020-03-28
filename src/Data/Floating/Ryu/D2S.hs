@@ -9,6 +9,7 @@ module Data.Floating.Ryu.D2S
 
 import Debug.Trace
 import Data.Array
+import Data.Array.Base (unsafeAt)
 import Data.Bits.Floating
 import Data.Bits
 import Data.Floating.Ryu.Common
@@ -420,10 +421,10 @@ mulShift64 m f@(Word128 factorHi factorLo) shift =
      in fromIntegral $ sum .>> (fromIntegral $ shift - 64)
 
 mulPow5InvDivPow2 :: Word64 -> Word64 -> Int32 -> Word64
-mulPow5InvDivPow2 m q j = mulShift64 m (double_pow5_inv_split ! q) j
+mulPow5InvDivPow2 m q j = mulShift64 m (double_pow5_inv_split `unsafeAt` fromIntegral q) j
 
 mulPow5DivPow2 :: Word64 -> Word64 -> Int32 -> Word64
-mulPow5DivPow2 m i j = mulShift64 m (double_pow5_split ! i) j
+mulPow5DivPow2 m i j = mulShift64 m (double_pow5_split `unsafeAt` fromIntegral i) j
 
 acceptBounds :: Word64 -> Bool
 acceptBounds v = v `div` 4 .&. 1 == 0

@@ -10,6 +10,7 @@ module Data.Floating.Ryu.F2S
 
 import Debug.Trace
 import Data.Array.Unboxed
+import Data.Array.Base (unsafeAt)
 import Data.Bits.Floating
 import Data.Bits
 import Data.Char (ord)
@@ -80,10 +81,10 @@ mulShift32 m factor shift =
      in fromIntegral $ sum .>> (fromIntegral $ shift - 32)
 
 mulPow5InvDivPow2 :: Word32 -> Word32 -> Int32 -> Word32
-mulPow5InvDivPow2 m q j = mulShift32 m (float_pow5_inv_split ! q) j
+mulPow5InvDivPow2 m q j = mulShift32 m (float_pow5_inv_split `unsafeAt` fromIntegral q) j
 
 mulPow5DivPow2 :: Word32 -> Word32 -> Int32 -> Word32
-mulPow5DivPow2 m i j = mulShift32 m (float_pow5_split ! i) j
+mulPow5DivPow2 m i j = mulShift32 m (float_pow5_split `unsafeAt` fromIntegral i) j
 
 acceptBounds :: Word32 -> Bool
 acceptBounds v = v `div` 4 .&. 1 == 0
