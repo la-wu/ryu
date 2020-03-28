@@ -134,9 +134,9 @@ f2dGT e2 u v w =
                else 0
         (vvIsTrailingZeros, vuIsTrailingZeros, vw') =
             case () of
-              _ | q <= 9 && v `mod` 5 == 0 -> (multipleOfPowerOf5 v q, False, vw)
-                | q <= 9 && acceptBounds v -> (False, multipleOfPowerOf5 u q, vw)
-                | q <= 9                   -> (False, False, vw - asWord (multipleOfPowerOf5 w q))
+              _ | q <= 9 && v `mod` 5 == 0 -> (multipleOfPowerOf5_32 v q, False, vw)
+                | q <= 9 && acceptBounds v -> (False, multipleOfPowerOf5_32 u q, vw)
+                | q <= 9                   -> (False, False, vw - asWord (multipleOfPowerOf5_32 w q))
                 | otherwise                -> (False, False, vw)
      in (BoundsState v vu vv vw' lastRemovedDigit vuIsTrailingZeros vvIsTrailingZeros, e10)
 

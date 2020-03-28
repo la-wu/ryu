@@ -11,7 +11,8 @@ module Data.Floating.Ryu.Common
     , pow5bits
     , log10pow2
     , log10pow5
-    , multipleOfPowerOf5
+    , multipleOfPowerOf5_32
+    , multipleOfPowerOf5_64
     , multipleOfPowerOf2
     , toChars
     , toCharsBS
@@ -20,6 +21,7 @@ module Data.Floating.Ryu.Common
     ) where
 
 import Data.Array.Unboxed
+import Data.Array.Base (unsafeAt)
 import Data.Bits
 import Data.Char (chr, ord)
 import Data.Int (Int32)
@@ -101,13 +103,17 @@ log10pow2 e = (e * 78913) .>> 18
 log10pow5 :: (Bits a, Integral a) => a -> a
 log10pow5 e = (e * 732928) .>> 20
 
-pow5factor :: Integral a => a -> a
-pow5factor value
-  | value `mod` 5 /= 0 = 0
-  | otherwise = 1 + (pow5factor $ value `div` 5)
+pow5_32 :: UArray Int Word32
+pow5_32 = listArray (0, 9) [5 ^ x | x <- [0..9]]
 
-multipleOfPowerOf5 :: Integral a => a -> a -> Bool
-multipleOfPowerOf5 value p = pow5factor value >= p
+pow5_64 :: UArray Int Word64
+pow5_64 = listArray (0, 21) [5 ^ x | x <- [0..21]]
+
+multipleOfPowerOf5_32 :: Word32 -> Word32 -> Bool
+multipleOfPowerOf5_32 value p = value `mod` (pow5_32 `unsafeAt` fromIntegral p) == 0
+
+multipleOfPowerOf5_64 :: Word64 -> Word64 -> Bool
+multipleOfPowerOf5_64 value p = value `mod` (pow5_64 `unsafeAt` fromIntegral p) == 0
 
 multipleOfPowerOf2 :: (Bits a, Integral a) => a -> a -> Bool
 multipleOfPowerOf2 value p = value .&. mask p == 0

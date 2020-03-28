@@ -466,9 +466,9 @@ d2dGT e2 u v w =
         vw = mulPow5InvDivPow2 w q i
         (vvIsTrailingZeros, vuIsTrailingZeros, vw') =
             case () of
-              _ | q <= 21 && v `mod` 5 == 0 -> (multipleOfPowerOf5 v q, False, vw)
-                | q <= 21 && acceptBounds v -> (False, multipleOfPowerOf5 u q, vw)
-                | q <= 21                   -> (False, False, vw - asWord (multipleOfPowerOf5 w q))
+              _ | q <= 21 && v `mod` 5 == 0 -> (multipleOfPowerOf5_64 v q, False, vw)
+                | q <= 21 && acceptBounds v -> (False, multipleOfPowerOf5_64 u q, vw)
+                | q <= 21                   -> (False, False, vw - asWord (multipleOfPowerOf5_64 w q))
                 | otherwise                 -> (False, False, vw)
      in (BoundsState v vu vv vw' 0 vuIsTrailingZeros vvIsTrailingZeros, e10)
 
