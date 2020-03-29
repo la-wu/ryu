@@ -15,6 +15,8 @@ module Data.Floating.Ryu.F2S
 
 import Debug.Trace
 import Data.Array.Unboxed
+import Data.Array.MArray
+import Data.Array.ST
 import Data.Array.Base (unsafeAt)
 import Data.Bits.Floating
 import Data.Bits
@@ -24,7 +26,12 @@ import Data.Int (Int32)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BS
 import Control.Lens
+import Control.Monad (foldM)
+import Control.Monad.ST
+import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
+import Foreign.Ptr (minusPtr)
 import GHC.Word (Word32, Word64)
+import System.IO.Unsafe (unsafePerformIO)
 
 float_mantissa_bits :: Word32
 float_mantissa_bits = 23
@@ -259,7 +266,71 @@ f2sScientific' = f2s' toCharsScientific BS.packChars
 
 -- manual long division
 largeFloatToChars :: Bool -> Word32 -> Int32 -> BS.ByteString
-largeFloatToChars sign mantissa exponent = undefined
+largeFloatToChars sign mantissa exponent =
+    let (d, filled, fs) = loop
+        olength = if d >= 1000000000 then 10 else decimalLength9 d
+        totalLength = 1 + olength + 9 * filled
+     in unsafePerformIO $ do
+         fp <- BS.mallocByteString totalLength
+         withForeignPtr fp $ \p0 -> do
+             p1 <- writeSign p0 sign
+             p2 <- appendNDigits p1 d olength
+             p3 <- foldM append9Digits p2 (reverse . take filled . elems $ fs)
+             return $ BS.PS fp 0 (p3 `minusPtr` p0)
+    where
+        loop :: (Word32, Int, UArray Int Word32)
+        loop = runST $ do
+            let maxBits = 24 + exponent
+                maxIdx = fromIntegral (maxBits + 31) `div` 32 - 1
+                shift = exponent `mod` 32
+            ds <- newArray (0, 3) 0 :: ST s (STUArray s Int Word32)
+            if shift <= 8
+               then do
+                   writeArray ds maxIdx (mantissa .<< shift)
+               else do
+                   writeArray ds (maxIdx - 1) (mantissa .<< shift)
+                   writeArray ds maxIdx (mantissa .>> (32 - shift))
+            if maxIdx /= 0
+               then do
+                   fs<- newArray (0, 3) 0 :: ST s (STUArray s Int Word32)
+                   longDivide ds fs maxIdx 0
+               else do
+                   -- maxIdx == 0 -> exponent <= 8
+                   -- doesn't matter what the 'filled' array is populated with.
+                   -- just return someting
+                   t <- freeze ds
+                   return (mantissa .<< shift, 0, t)
+
+        longDivide :: STUArray s Int Word32
+                   -> STUArray s Int Word32
+                   -> Int
+                   -> Int
+                   -> ST s (Word32, Int, UArray Int Word32)
+        longDivide ds fs maxIdx iters = do
+            sig <- readArray ds maxIdx
+            let (quot, rem) = sig `divMod` 1000000000
+            writeArray ds maxIdx quot
+            rem' <- longDivide' ds maxIdx rem
+            writeArray fs iters rem'
+            if quot == 0
+               then if maxIdx == 1
+                       then do
+                           d <- readArray ds 0
+                           t <- freeze fs
+                           return (d, iters + 1, t)
+                       else longDivide ds fs (maxIdx - 1) (iters + 1)
+               else longDivide ds fs maxIdx (iters + 1)
+
+        longDivide' :: STUArray s Int Word32 -> Int -> Word32 -> ST s (Word32)
+        longDivide' _ 0 rem = return rem
+        longDivide' ds idx rem = do
+            d <- readArray ds (idx - 1)
+            let full :: Word64
+                -- high bits or'd with next chunk of bits
+                full = (fromIntegral rem .<< 32) .|. fromIntegral d
+                quot = fromIntegral $ full `div` 1000000000
+            writeArray ds (idx - 1) quot
+            longDivide' ds (idx - 1) (fromIntegral full - 1000000000 * quot)
 
 fixupLargeFixed :: Float -> Maybe BS.ByteString -> BS.ByteString
 fixupLargeFixed f bs =

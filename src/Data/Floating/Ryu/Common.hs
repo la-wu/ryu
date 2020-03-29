@@ -17,6 +17,8 @@ module Data.Floating.Ryu.Common
     , multipleOfPowerOf5_64
     , multipleOfPowerOf2
     , writeSign
+    , appendNDigits
+    , append9Digits
     , toCharsScientific
     , toCharsFixed
     , toChars
@@ -268,6 +270,18 @@ writeRightAligned ptr v
       copy (digit_table ! fromIntegral v) (ptr `plusPtr` (-2))
   | otherwise = do
       poke (ptr `plusPtr` (-1)) (toAscii v :: Word8)
+
+appendNDigits :: Ptr Word8 -> Word32 -> Int -> IO (Ptr Word8)
+appendNDigits ptr w n = do
+    let end = ptr `plusPtr` n
+    writeRightAligned end w
+    return end
+
+-- TODO: handroll hardcoded write?
+append9Digits :: Ptr Word8 -> Word32 -> IO (Ptr Word8)
+append9Digits ptr w = do
+    BS.memset ptr (BS.c2w '0') 9
+    appendNDigits ptr w 9
 
 -- exponent| Printed  | wholeDigits | totalLength          | Notes
 -- --------|----------|-------------|----------------------|---------------------------------------
