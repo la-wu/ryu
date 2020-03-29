@@ -1,4 +1,5 @@
 {-# LANGUAGE Strict, StrictData #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Data.Floating.Ryu.Common
     ( (.>>)
@@ -15,10 +16,10 @@ module Data.Floating.Ryu.Common
     , multipleOfPowerOf5_32
     , multipleOfPowerOf5_64
     , multipleOfPowerOf2
+    , writeSign
+    , toCharsScientific
+    , toCharsFixed
     , toChars
-    , toCharsBS
-    , toChars'
-    , prependIf
     ) where
 
 import Data.Array.Unboxed
@@ -33,6 +34,7 @@ import qualified Data.ByteString.Builder.Extra as BBE
 import qualified Data.ByteString.Lazy.Char8 as BL
 import GHC.Word (Word8, Word16, Word32, Word64)
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
+import Foreign.Marshal.Utils (moveBytes)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import Foreign.Storable (poke)
 import System.IO.Unsafe (unsafePerformIO)
@@ -122,57 +124,23 @@ multipleOfPowerOf5_64 value p = value `mod` (pow5_64 `unsafeAt` fromIntegral p) 
 multipleOfPowerOf2 :: (Bits a, Integral a) => a -> a -> Bool
 multipleOfPowerOf2 value p = value .&. mask p == 0
 
-forDigitsN :: (Integral a, Monoid m) => (a -> m) -> m -> Int -> a -> (m, a)
-forDigitsN _ r 0 x = (r, x)
-forDigitsN f r n x = forDigitsN f (f x <> r) (n - 1) (x `div` 10)
-
 toAscii :: (Integral a, Integral b) => a -> b
 toAscii = fromIntegral . (+) (fromIntegral $ ord '0')
 
-asBuilder :: (Integral a) => a -> BB.Builder
-asBuilder = BB.int8 . toAscii
-
-lastDigitToBuilder :: (Integral a) => a -> BB.Builder
-lastDigitToBuilder = asBuilder . flip mod 10
-
-prependIf :: Bool -> a -> [a] -> [a]
-prependIf True x xs = x : xs
-prependIf False _ xs = xs
-
-asAsciiWord :: (Int, Int) -> Word16
-asAsciiWord (a, b) = toAscii a * 256 + toAscii b
-
-builder_table :: UArray Int32 Word16
-builder_table = listArray (0, 99) [ asAsciiWord (a, b) | a <- [0..9], b <- [0..9] ]
-
-printExp :: Int32 -> BB.Builder
-printExp exp
-  | exp >= 100 = BB.word16BE (builder_table ! (exp `div` 10)) <> asBuilder (exp `mod` 10)
-  | exp >= 10 = BB.word16BE $ builder_table ! exp
-  | otherwise = asBuilder exp
-
-class Integral a => Mantissa a where
+class (IArray UArray a, FiniteBits a, Integral a) => Mantissa a where
     decimalLength :: a -> Int
+    max_representable_pow10 :: a -> Int32
+    max_shifted_mantissa :: UArray Int32 a
 
 instance Mantissa Word32 where
     decimalLength = decimalLength9
+    max_representable_pow10 = const 10
+    max_shifted_mantissa = listArray (0, 10) [ (2^24 - 1) `div` 5^x | x <- [0..10] ]
 
 instance Mantissa Word64 where
     decimalLength = decimalLength17
-
--- TODO: optimize
-toChars :: (Mantissa a) => Bool -> a -> Int32 -> String
-toChars sign mantissa exponent =
-    let olength = decimalLength mantissa
-        signB = if sign then BB.char7 '-' else mempty
-        (front, sig) = forDigitsN lastDigitToBuilder mempty (olength - 1) mantissa
-        exp = exponent + fromIntegral olength - 1
-        back = BB.char7 'E' <> if exp < 0
-                                  then BB.char7 '-' <> printExp (-exp)
-                                  else printExp exp
-     in BL.unpack . BBE.toLazyByteStringWith (BBE.untrimmedStrategy 32 BBE.smallChunkSize) BL.empty $ if olength > 1
-           then signB <> asBuilder sig <> BB.char7 '.' <> front <> back
-           else signB <> asBuilder sig <> back
+    max_representable_pow10 = const 22
+    max_shifted_mantissa = listArray (0, 22) [ (2^53- 1) `div` 5^x | x <- [0..22] ]
 
 digit_table :: Array Int32 BS.ByteString
 digit_table = listArray (0, 99) [ BS.packBytes [toAscii a, toAscii b] | a <- [0..9], b <- [0..9] ]
@@ -228,8 +196,8 @@ writeSign ptr True = do
     return $ ptr `plusPtr` 1
 writeSign ptr False = return ptr
 
-toCharsBS :: (Mantissa a) => Bool -> a -> Int32 -> BS.ByteString
-toCharsBS sign mantissa exponent = unsafePerformIO $ do
+toCharsScientific :: (Mantissa a) => Bool -> a -> Int32 -> BS.ByteString
+toCharsScientific sign mantissa exponent = unsafePerformIO $ do
     let olength = decimalLength mantissa
     fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
     withForeignPtr fp $ \p0 -> do
@@ -243,6 +211,118 @@ toCharsBS sign mantissa exponent = unsafePerformIO $ do
                   else writeExponent pe exp
         return $ BS.PS fp 0 (end `minusPtr` p0)
 
-toChars' :: (Mantissa a) => Bool -> a -> Int32 -> String
-toChars' s m = BS.unpackChars . toCharsBS s m
+
+--
+-- fixed implementation derived from MSVC STL
+--
+
+trimmedDigits :: (Mantissa a) => a -> Int32 -> Bool
+trimmedDigits mantissa exponent =
+    -- Ryu generated X: mantissa * 10^exponent
+    -- mantissa == 2^zeros* (mantissa >> zeros)
+    -- 10^exponent == 2^exponent * 5^exponent
+
+    -- for float
+    -- zeros is [0, 29] (aside: because 2^29 is the largest power of 2
+    --                   with 9 decimal digits, which is float's round-trip
+    --                   limit.)
+    -- exponent is [1, 10].
+    -- Normalization adds [2, 23] (aside: at least 2 because the pre-normalized
+    --                             mantissa is at least 5).
+    -- This adds up to [3, 62], which is well below float's maximum binary
+    -- exponent 127
+    --
+    -- for double
+    -- zeros is [0, 56]
+    -- exponent is [1, 22].
+    -- Normalization adds [2, 52]
+    -- This adds up to [3, 130], which is well below double's maximum binary
+    -- exponent 1023
+    --
+    -- In either case, the pow-2 part is entirely encodeable in the exponent bits
+
+    -- Therefore, we just need to consider (mantissa >> zeros) * 5^exponent.
+
+    -- If that product would exceed 24 (53) bits, then X can't be exactly
+    -- represented as a float.  (That's not a problem for round-tripping,
+    -- because X is close enough to the original float, but X isn't
+    -- mathematically equal to the original float.) This requires a
+    -- high-precision fallback.
+    let zeros = countTrailingZeros mantissa
+        shiftMantissa = mantissa .>> zeros
+     in shiftMantissa > max_shifted_mantissa `unsafeAt` fromIntegral exponent
+
+writeRightAligned :: (Mantissa a) => Ptr Word8 -> a -> IO ()
+writeRightAligned ptr v
+  | v >= 10000 = do
+      let (v', c) = v `divMod` 10000
+          (c1, c0) = c `divMod` 100
+      copy (digit_table ! fromIntegral c0) (ptr `plusPtr` (-2))
+      copy (digit_table ! fromIntegral c1) (ptr `plusPtr` (-4))
+      writeRightAligned (ptr `plusPtr` (-4)) v'
+  | v >= 100 = do
+      let (v', c) = v `divMod` 100
+      copy (digit_table ! fromIntegral c) (ptr `plusPtr` (-2))
+      writeRightAligned (ptr `plusPtr` (-2)) v'
+  | v >= 10 = do
+      copy (digit_table ! fromIntegral v) (ptr `plusPtr` (-2))
+  | otherwise = do
+      poke (ptr `plusPtr` (-1)) (toAscii v :: Word8)
+
+-- exponent| Printed  | wholeDigits | totalLength          | Notes
+-- --------|----------|-------------|----------------------|---------------------------------------
+--       2 | 172900   |  6          | wholeDigits          | Ryu can't be used for printing
+--       1 | 17290    |  5          | (sometimes adjusted) | when the trimmed digits are nonzero.
+-- --------|----------|-------------|----------------------|---------------------------------------
+--       0 | 1729     |  4          | wholeDigits          | Unified length cases.
+-- --------|----------|-------------|----------------------|---------------------------------------
+--      -1 | 172.9    |  3          | olength + 1          | This case can't happen for
+--      -2 | 17.29    |  2          |                      | olength == 1, but no additional
+--      -3 | 1.729    |  1          |                      | code is needed to avoid it.
+-- --------|----------|-------------|----------------------|---------------------------------------
+--      -4 | 0.1729   |  0          | 2 - exponent         | Print at least one digit before
+--      -5 | 0.01729  | -1          |                      | decimal
+--      -6 | 0.001729 | -2          |                      |
+--
+-- returns Nothing when we can't represent through ryu. need to fall back to a
+-- higher precision method that is dependent on the original (float / double)
+-- input value and type
+toCharsFixed :: (Show a, Mantissa a) => Bool -> a -> Int32 -> Maybe BS.ByteString
+toCharsFixed sign mantissa exponent = unsafePerformIO $ do
+    fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
+    let olength = decimalLength mantissa
+        wholeDigits = fromIntegral olength + exponent
+        totalLength = case () of
+                        _ | exponent >= 0   -> wholeDigits
+                          | wholeDigits > 0 -> fromIntegral olength + 1
+                          | otherwise       -> 2 - exponent
+        finalize = Just $ BS.PS fp 0 (fromIntegral totalLength)
+    withForeignPtr fp $ \p0 -> do
+        p1 <- writeSign p0 sign
+        if exponent >= 0
+           then
+               if exponent > max_representable_pow10 mantissa || trimmedDigits mantissa exponent
+                  then return Nothing -- large integer
+                  else do
+                      -- case 172900 .. 1729
+                      let p2 = p1 `plusPtr` olength
+                      writeRightAligned p2 mantissa
+                      BS.memset p2 (BS.c2w '0') (fromIntegral exponent)
+                      return finalize
+           else do
+               writeRightAligned (p1 `plusPtr` fromIntegral totalLength) mantissa
+               if wholeDigits > 0
+                  then do
+                      -- case 17.29
+                      moveBytes p1 (p1 `plusPtr` 1) (fromIntegral wholeDigits)
+                      poke (p1 `plusPtr` fromIntegral wholeDigits) (BS.c2w '.')
+                      return finalize
+                  else do
+                      -- case 0.001729
+                      BS.memset p1 (BS.c2w '0') (fromIntegral (-wholeDigits) + 2)
+                      poke (p1 `plusPtr` 1) (BS.c2w '.')
+                      return finalize
+
+toChars :: (Mantissa a) => Bool -> a -> Int32 -> String
+toChars s m = BS.unpackChars . toCharsScientific s m
 

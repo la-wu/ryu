@@ -3,6 +3,11 @@
 
 module Data.Floating.Ryu.F2S
     ( f2s
+    , f2sFixed
+    , f2sScientific
+    , f2sGeneral
+    , f2sScientific'
+    , f2sFixed'
     , f2s'
     , f2Intermediate
     , FloatingDecimal(..)
@@ -16,6 +21,8 @@ import Data.Bits
 import Data.Char (ord)
 import Data.Floating.Ryu.Common
 import Data.Int (Int32)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BS
 import Control.Lens
 import GHC.Word (Word32, Word64)
 
@@ -247,6 +254,52 @@ f2s' formatter back f =
            else let FloatingDecimal m e = f2d mantissa exponent
                  in formatter sign m e
 
+f2sScientific' :: Float -> BS.ByteString
+f2sScientific' = f2s' toCharsScientific BS.packChars
+
+-- manual long division
+largeFloatToChars :: Bool -> Word32 -> Int32 -> BS.ByteString
+largeFloatToChars sign mantissa exponent = undefined
+
+fixupLargeFixed :: Float -> Maybe BS.ByteString -> BS.ByteString
+fixupLargeFixed f bs =
+    case bs of
+      Just res -> res
+      Nothing ->
+          let (sign, mantissa, exponent) = breakdown f
+              m = (1 .<< float_mantissa_bits) .|. mantissa
+              e = toS exponent - toS float_bias - toS float_mantissa_bits
+           in largeFloatToChars sign m e
+
+f2sFixed' :: Float -> BS.ByteString
+f2sFixed' f = fixupLargeFixed f $ f2s' toCharsFixed (Just . BS.packChars) f
+
+f2sGeneral :: Float -> BS.ByteString
+f2sGeneral f = fixupLargeFixed f $ f2s' dispatch (Just . BS.packChars) f
+    where
+        dispatch :: Bool -> Word32 -> Int32 -> Maybe BS.ByteString
+        dispatch sign m e =
+            let olength = decimalLength9 m
+                (lower, upper) =
+                    if olength == 1
+                       -- Value | Fixed   | Scientific
+                       -- 1e-3  | "0.001" | "1e-03"
+                       -- 1e4   | "10000" | "1e+04"
+                       then (-3, 4)
+                       -- Value   | Fixed       | Scientific
+                       -- 1234e-7 | "0.0001234" | "1.234e-04"
+                       -- 1234e5  | "123400000" | "1.234e+08"
+                       else (-(olength + 3), 5)
+             in if lower <= fromIntegral e && fromIntegral e <= upper
+                   then toCharsFixed sign m e
+                   else Just $ toCharsScientific sign m e
+
+f2sScientific :: Float -> String
+f2sScientific = BS.unpackChars . f2sScientific'
+
+f2sFixed :: Float -> String
+f2sFixed = BS.unpackChars . f2sFixed'
+
 f2s :: Float -> String
-f2s = f2s' toChars id
+f2s = BS.unpackChars . f2sGeneral
 

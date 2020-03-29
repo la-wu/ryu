@@ -32,8 +32,13 @@ main = do
             ]
     defaultMain
         [ bgroup "f2Intermediate" $ suite nf f2Intermediate
-        , bgroup "f2s" $ suite nf f2s
-        , bgroup "f2sO" $ suite nf (f2s' toChars' id)
-        , bgroup "f2sBS" $ suite nf (f2s' toCharsBS BS.packChars)
+        , bgroup "f2s E String" $ suite nf f2sScientific
+        , bgroup "f2s E BS" $ suite nf f2sScientific'
+        , bgroup "f2s F String" $ suite nf f2sFixed
+        , bgroup "f2s F BS" $ suite nf f2sFixed'
+        , bgroup "f2s G String" $ suite nf f2s
+        , bgroup "f2s G BS" $ suite nf f2sGeneral
         , bgroup "showEFloat" $ suite nf (flip (showEFloat Nothing) [])
+        , bgroup "showFFloat" $ suite nf (flip (showFFloat Nothing) [])
+        , bgroup "showGFloat" $ suite nf (flip (showGFloat Nothing) [])
         ]
