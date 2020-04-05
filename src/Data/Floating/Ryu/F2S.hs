@@ -25,7 +25,7 @@ import Data.Floating.Ryu.Common
 import Data.Int (Int32)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BS
-import Control.Lens
+import Control.Lens hiding ((...))
 import Control.Monad (foldM)
 import Control.Monad.ST
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
@@ -253,16 +253,16 @@ f2Intermediate f = let (sign, mantissa, exponent) = breakdown f
                           then FloatingDecimal mantissa (fromIntegral exponent)
                           else f2d mantissa exponent
 
-f2s' :: (Bool -> Word32 -> Int32 -> a) -> (String -> a) -> Float -> a
-f2s' formatter back f =
+f2s' :: (Bool -> Word32 -> Int32 -> a) -> (Bool -> Bool -> Bool -> a) -> Float -> a
+f2s' formatter special f =
     let (sign, mantissa, exponent) = breakdown f
      in if (exponent == mask float_exponent_bits) || (exponent == 0 && mantissa == 0)
-           then back $ special sign (exponent > 0) (mantissa > 0)
+           then special sign (exponent > 0) (mantissa > 0)
            else let FloatingDecimal m e = f2d mantissa exponent
                  in formatter sign m e
 
 f2sScientific' :: Float -> BS.ByteString
-f2sScientific' = f2s' toCharsScientific BS.packChars
+f2sScientific' = f2s' toCharsScientific (BS.packChars ... special)
 
 -- manual long division
 largeFloatToChars :: Bool -> Word32 -> Int32 -> BS.ByteString
@@ -343,10 +343,10 @@ fixupLargeFixed f bs =
            in largeFloatToChars sign m e
 
 f2sFixed' :: Float -> BS.ByteString
-f2sFixed' f = fixupLargeFixed f $ f2s' toCharsFixed (Just . BS.packChars) f
+f2sFixed' f = fixupLargeFixed f $ f2s' toCharsFixed (Just ... BS.packChars ... specialFixed) f
 
 f2sGeneral :: Float -> BS.ByteString
-f2sGeneral f = fixupLargeFixed f $ f2s' dispatch (Just . BS.packChars) f
+f2sGeneral f = fixupLargeFixed f $ f2s' dispatch (Just ... BS.packChars ... specialFixed) f
     where
         dispatch :: Bool -> Word32 -> Int32 -> Maybe BS.ByteString
         dispatch sign m e =

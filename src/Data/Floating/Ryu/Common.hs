@@ -7,7 +7,10 @@ module Data.Floating.Ryu.Common
     , mask
     , asWord
     , pmap
+    , dot
+    , (...)
     , special
+    , specialFixed
     , decimalLength9
     , decimalLength17
     , pow5bits
@@ -90,6 +93,14 @@ decimalLength17 v
   | v >= 10 = 2
   | otherwise = 1
 
+infixr 9 `dot`
+dot :: (a -> b) -> (c -> d -> a) -> c -> d -> b
+dot = (.) . (.)
+
+infixr 9 ...
+(...) :: (a -> b) -> (c -> d -> e -> a) -> c -> d -> e -> b
+(...) = dot . (.)
+
 --         Sign -> Exp  -> Mantissa
 special :: Bool -> Bool -> Bool   ->   String
 special    _       _       True   =    "NaN"
@@ -97,6 +108,14 @@ special    True    False   _      =    "-0E0"
 special    False   False   _      =    "0E0"
 special    True    True    _      =    "-Infinity"
 special    False   True    _      =    "Infinity"
+
+-- same as above but for fixed-point / general conversion
+specialFixed :: Bool -> Bool -> Bool   ->   String
+specialFixed    _       _       True   =    "NaN"
+specialFixed    True    False   _      =    "-0"
+specialFixed    False   False   _      =    "0"
+specialFixed    True    True    _      =    "-Infinity"
+specialFixed    False   True    _      =    "Infinity"
 
 
 -- Returns e == 0 ? 1 : ceil(log_2(5^e)); requires 0 <= e <= 3528.
@@ -316,7 +335,7 @@ toCharsFixed sign mantissa exponent = unsafePerformIO $ do
                         _ | exponent >= 0   -> wholeDigits
                           | wholeDigits > 0 -> fromIntegral olength + 1
                           | otherwise       -> 2 - exponent
-        finalize = Just $ BS.PS fp 0 (fromIntegral totalLength)
+        finalize = Just $ BS.PS fp 0 (fromIntegral totalLength + asWord sign)
     withForeignPtr fp $ \p0 -> do
         p1 <- writeSign p0 sign
         if exponent >= 0
