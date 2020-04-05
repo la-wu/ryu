@@ -101,7 +101,7 @@ mulPow5DivPow2 :: Word32 -> Word32 -> Int32 -> Word32
 mulPow5DivPow2 m i j = mulShift32 m (float_pow5_split `unsafeAt` fromIntegral i) j
 
 acceptBounds :: Word32 -> Bool
-acceptBounds v = v `div` 4 .&. 1 == 0
+acceptBounds v = v `quot` 4 .&. 1 == 0
 
 data BoundsState = BoundsState
     { _vu :: Word32
@@ -110,31 +110,31 @@ data BoundsState = BoundsState
     , _lastRemovedDigit :: Word32
     , _vuIsTrailingZeros :: Bool
     , _vvIsTrailingZeros :: Bool
-    } deriving Show
+    }
 
 makeLenses ''BoundsState
 
 differ :: BoundsState -> Bool
-differ d = d ^. vw `div` 10 > d ^. vu `div` 10
+differ d = d ^. vw `quot` 10 > d ^. vu `quot` 10
 
 removeDigit :: BoundsState -> BoundsState
-removeDigit = (vu %~ flip div 10)
-            . (vv %~ flip div 10)
-            . (vw %~ flip div 10)
-            . (\d -> d & lastRemovedDigit .~ (d ^. vv `mod` 10))
+removeDigit = (vu %~ flip quot 10)
+            . (vv %~ flip quot 10)
+            . (vw %~ flip quot 10)
+            . (\d -> d & lastRemovedDigit .~ (d ^. vv `rem` 10))
 
 trimTrailing' :: BoundsState -> (BoundsState, Int32)
 trimTrailing' d
   | differ d =
       fmap ((+) 1) . trimTrailing' $
           d & removeDigit
-            & vuIsTrailingZeros .~ (d ^. vu `mod` 10 == 0)
+            & vuIsTrailingZeros .~ (d ^. vu `rem` 10 == 0)
             & vvIsTrailingZeros .~ (d ^. lastRemovedDigit == 0)
   | otherwise = (d, 0)
 
 trimTrailing'' :: BoundsState -> (BoundsState, Int32)
 trimTrailing'' d
-  | d ^. vu `mod` 10 == 0 =
+  | d ^. vu `rem` 10 == 0 =
       fmap ((+) 1) . trimTrailing'' $
           d & removeDigit
             & vvIsTrailingZeros .~ (d ^. lastRemovedDigit == 0)
@@ -146,7 +146,7 @@ trimTrailing d
         (d'', r') = if d' ^. vuIsTrailingZeros
                        then trimTrailing'' d'
                        else (d', 0)
-        forceDown = if d'' ^. vvIsTrailingZeros && d'' ^. lastRemovedDigit == 5 && d'' ^. vv `mod` 2 == 0
+        forceDown = if d'' ^. vvIsTrailingZeros && d'' ^. lastRemovedDigit == 5 && d'' ^. vv `rem` 2 == 0
                        then lastRemovedDigit .~ 4
                        else id
      in (forceDown d'', r + r')
@@ -166,17 +166,17 @@ f2dGT e2 u v w =
         vv = mulPow5InvDivPow2 v q i
         vw = mulPow5InvDivPow2 w q i
         lastRemovedDigit =
-            if q /= 0 && (vw - 1) `div` 10 <= vu `div` 10
+            if q /= 0 && (vw - 1) `quot` 10 <= vu `quot` 10
                -- We need to know one removed digit even if we are not going to loop
                -- below. We could use q = X - 1 above, except that would require 33
                -- bits for the result, and we've found that 32-bit arithmetic is
                -- faster even on 64-bit machines.
                then let l = float_pow5_inv_bitcount + pow5bits (toS q - 1) - 1
-                     in (mulPow5InvDivPow2 v (q - 1) (-e2 + toS q - 1 + l)) `mod` 10
+                     in (mulPow5InvDivPow2 v (q - 1) (-e2 + toS q - 1 + l)) `rem` 10
                else 0
         (vvIsTrailingZeros, vuIsTrailingZeros, vw') =
             case () of
-              _ | q <= 9 && v `mod` 5 == 0 -> (multipleOfPowerOf5_32 v q, False, vw)
+              _ | q <= 9 && v `rem` 5 == 0 -> (multipleOfPowerOf5_32 v q, False, vw)
                 | q <= 9 && acceptBounds v -> (False, multipleOfPowerOf5_32 u q, vw)
                 | q <= 9                   -> (False, False, vw - asWord (multipleOfPowerOf5_32 w q))
                 | otherwise                -> (False, False, vw)
@@ -193,9 +193,9 @@ f2dLT e2 u v w =
         vv = mulPow5DivPow2 v (toU i) j
         vw = mulPow5DivPow2 w (toU i) j
         lastRemovedDigit =
-            if q /= 0 && (vw - 1) `div` 10 <= vu `div` 10
+            if q /= 0 && (vw - 1) `quot` 10 <= vu `quot` 10
                then let j = toS q - 1 - (pow5bits (i + 1) - float_pow5_bitcount)
-                     in (mulPow5DivPow2 v (toU $ i + 1) j) `mod` 10
+                     in (mulPow5DivPow2 v (toU $ i + 1) j) `rem` 10
                else 0
         (vvIsTrailingZeros, vuIsTrailingZeros, vw') =
             case () of
@@ -281,8 +281,8 @@ largeFloatToChars sign mantissa exponent =
         loop :: (Word32, Int, UArray Int Word32)
         loop = runST $ do
             let maxBits = 24 + exponent
-                maxIdx = fromIntegral (maxBits + 31) `div` 32 - 1
-                shift = exponent `mod` 32
+                maxIdx = fromIntegral (maxBits + 31) `quot` 32 - 1
+                shift = exponent `rem` 32
             ds <- newArray (0, 3) 0 :: ST s (STUArray s Int Word32)
             if shift <= 8
                then do
@@ -314,9 +314,9 @@ largeFloatToChars sign mantissa exponent =
         longDivide' ds rem idx = do
             d <- unsafeRead ds idx
             let full = (fromIntegral rem .<< 32 :: Word64) .|. fromIntegral d
-                quot = fromIntegral $ full `div` 1000000000
-            unsafeWrite ds idx quot
-            return $ fromIntegral full - 1000000000 * quot
+                qt = fromIntegral $ full `quot` 1000000000
+            unsafeWrite ds idx qt
+            return $ fromIntegral full - 1000000000 * qt
 
 fixupLargeFixed :: Float -> Maybe BS.ByteString -> BS.ByteString
 fixupLargeFixed f bs =

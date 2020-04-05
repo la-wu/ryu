@@ -156,12 +156,12 @@ class (IArray UArray a, FiniteBits a, Integral a) => Mantissa a where
 instance Mantissa Word32 where
     decimalLength = decimalLength9
     max_representable_pow10 = const 10
-    max_shifted_mantissa = listArray (0, 10) [ (2^24 - 1) `div` 5^x | x <- [0..10] ]
+    max_shifted_mantissa = listArray (0, 10) [ (2^24 - 1) `quot` 5^x | x <- [0..10] ]
 
 instance Mantissa Word64 where
     decimalLength = decimalLength17
     max_representable_pow10 = const 22
-    max_shifted_mantissa = listArray (0, 22) [ (2^53- 1) `div` 5^x | x <- [0..22] ]
+    max_shifted_mantissa = listArray (0, 22) [ (2^53- 1) `quot` 5^x | x <- [0..22] ]
 
 type DigitStore = Word16
 
@@ -181,13 +181,13 @@ second = fromIntegral
 writeMantissa :: (Mantissa a) => Ptr Word8 -> Int -> Int -> a -> IO (Ptr Word8)
 writeMantissa ptr olength i mantissa
   | mantissa >= 10000 = do
-      let (m', c) = mantissa `divMod` 10000
-          (c1, c0) = c `divMod` 100
+      let (m', c) = mantissa `quotRem` 10000
+          (c1, c0) = c `quotRem` 100
       copy (digit_table `unsafeAt` fromIntegral c0) (ptr `plusPtr` (olength - i - 1))
       copy (digit_table `unsafeAt` fromIntegral c1) (ptr `plusPtr` (olength - i - 3))
       writeMantissa ptr olength (i + 4) m'
   | mantissa >= 100 = do
-      let (m', c) = mantissa `divMod` 100
+      let (m', c) = mantissa `quotRem` 100
       copy (digit_table `unsafeAt` fromIntegral c) (ptr `plusPtr` (olength - i - 1))
       writeMantissa ptr olength (i + 2) m'
   | mantissa >= 10 = do
@@ -206,7 +206,7 @@ writeMantissa ptr olength i mantissa
 writeExponent :: Ptr Word8 -> Int32 -> IO (Ptr Word8)
 writeExponent ptr exponent
   | exponent >= 100 = do
-      let (e1, e0) = exponent `divMod` 10
+      let (e1, e0) = exponent `quotRem` 10
       copy (digit_table `unsafeAt` fromIntegral e1) ptr
       poke (ptr `plusPtr` 2) (toAscii e0 :: Word8)
       return $ ptr `plusPtr` 3
@@ -282,13 +282,13 @@ trimmedDigits mantissa exponent =
 writeRightAligned :: (Mantissa a) => Ptr Word8 -> a -> IO ()
 writeRightAligned ptr v
   | v >= 10000 = do
-      let (v', c) = v `divMod` 10000
-          (c1, c0) = c `divMod` 100
+      let (v', c) = v `quotRem` 10000
+          (c1, c0) = c `quotRem` 100
       copy (digit_table `unsafeAt` fromIntegral c0) (ptr `plusPtr` (-2))
       copy (digit_table `unsafeAt` fromIntegral c1) (ptr `plusPtr` (-4))
       writeRightAligned (ptr `plusPtr` (-4)) v'
   | v >= 100 = do
-      let (v', c) = v `divMod` 100
+      let (v', c) = v `quotRem` 100
       copy (digit_table `unsafeAt` fromIntegral c) (ptr `plusPtr` (-2))
       writeRightAligned (ptr `plusPtr` (-2)) v'
   | v >= 10 = do
