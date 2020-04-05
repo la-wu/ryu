@@ -17,7 +17,7 @@ import Debug.Trace
 import Data.Array.Unboxed
 import Data.Array.MArray
 import Data.Array.ST
-import Data.Array.Base (unsafeAt)
+import Data.Array.Base (unsafeAt, unsafeRead, unsafeWrite)
 import Data.Bits.Floating
 import Data.Bits
 import Data.Char (ord)
@@ -286,14 +286,23 @@ largeFloatToChars sign mantissa exponent =
             ds <- newArray (0, 3) 0 :: ST s (STUArray s Int Word32)
             if shift <= 8
                then do
-                   writeArray ds maxIdx (mantissa .<< shift)
+                   unsafeWrite ds maxIdx (mantissa .<< shift)
                else do
-                   writeArray ds (maxIdx - 1) (mantissa .<< shift)
-                   writeArray ds maxIdx (mantissa .>> (32 - shift))
+                   unsafeWrite ds (maxIdx - 1) (mantissa .<< shift)
+                   unsafeWrite ds maxIdx (mantissa .>> (32 - shift))
             if maxIdx /= 0
                then do
-                   fs<- newArray (0, 3) 0 :: ST s (STUArray s Int Word32)
-                   longDivide ds fs maxIdx 0
+                   fs <- newArray (0, 3) 0 :: ST s (STUArray s Int Word32)
+                   let longDivide 0 iters = return iters
+                       longDivide idx iters = do
+                           rem <- foldM (longDivide' ds) 0 (reverse [0..idx])
+                           unsafeWrite fs iters rem
+                           quot <- unsafeRead ds idx
+                           longDivide (idx - asWord (quot == 0)) (iters + 1)
+                   iters <- longDivide maxIdx 0
+                   d <- unsafeRead ds 0
+                   t <- freeze fs
+                   return (d, iters, t)
                else do
                    -- maxIdx == 0 -> exponent <= 8
                    -- doesn't matter what the 'filled' array is populated with.
@@ -301,36 +310,13 @@ largeFloatToChars sign mantissa exponent =
                    t <- freeze ds
                    return (mantissa .<< shift, 0, t)
 
-        longDivide :: STUArray s Int Word32
-                   -> STUArray s Int Word32
-                   -> Int
-                   -> Int
-                   -> ST s (Word32, Int, UArray Int Word32)
-        longDivide ds fs maxIdx iters = do
-            sig <- readArray ds maxIdx
-            let (quot, rem) = sig `divMod` 1000000000
-            writeArray ds maxIdx quot
-            rem' <- longDivide' ds maxIdx rem
-            writeArray fs iters rem'
-            if quot == 0
-               then if maxIdx == 1
-                       then do
-                           d <- readArray ds 0
-                           t <- freeze fs
-                           return (d, iters + 1, t)
-                       else longDivide ds fs (maxIdx - 1) (iters + 1)
-               else longDivide ds fs maxIdx (iters + 1)
-
-        longDivide' :: STUArray s Int Word32 -> Int -> Word32 -> ST s (Word32)
-        longDivide' _ 0 rem = return rem
-        longDivide' ds idx rem = do
-            d <- readArray ds (idx - 1)
-            let full :: Word64
-                -- high bits or'd with next chunk of bits
-                full = (fromIntegral rem .<< 32) .|. fromIntegral d
+        longDivide' :: STUArray s Int Word32 -> Word32 -> Int -> ST s (Word32)
+        longDivide' ds rem idx = do
+            d <- unsafeRead ds idx
+            let full = (fromIntegral rem .<< 32 :: Word64) .|. fromIntegral d
                 quot = fromIntegral $ full `div` 1000000000
-            writeArray ds (idx - 1) quot
-            longDivide' ds (idx - 1) (fromIntegral full - 1000000000 * quot)
+            unsafeWrite ds idx quot
+            return $ fromIntegral full - 1000000000 * quot
 
 fixupLargeFixed :: Float -> Maybe BS.ByteString -> BS.ByteString
 fixupLargeFixed f bs =
