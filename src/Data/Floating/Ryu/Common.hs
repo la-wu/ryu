@@ -37,7 +37,7 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import GHC.Word (Word8, Word16, Word32, Word64)
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import Foreign.Marshal.Utils (moveBytes)
-import Foreign.Ptr (Ptr, minusPtr, plusPtr)
+import Foreign.Ptr (Ptr, minusPtr, plusPtr, castPtr)
 import Foreign.Storable (poke)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -144,14 +144,19 @@ instance Mantissa Word64 where
     max_representable_pow10 = const 22
     max_shifted_mantissa = listArray (0, 22) [ (2^53- 1) `div` 5^x | x <- [0..22] ]
 
-digit_table :: Array Int32 BS.ByteString
-digit_table = listArray (0, 99) [ BS.packBytes [toAscii a, toAscii b] | a <- [0..9], b <- [0..9] ]
+type DigitStore = Word16
 
-copy :: BS.ByteString -> Ptr Word8 -> IO ()
-copy (BS.PS fp off len) ptr =
-  withForeignPtr fp $ \src -> do
-    BS.memcpy ptr (src `plusPtr` off) len
-    return ()
+digit_table :: UArray Int32 DigitStore
+digit_table = listArray (0, 99) [ (toAscii b .<< 8) .|. toAscii a | a <- [0..9], b <- [0..9] ]
+
+copy :: DigitStore -> Ptr Word8 -> IO ()
+copy d p = poke (castPtr p) d
+
+first :: DigitStore -> Word8
+first = fromIntegral . flip (.>>) 8
+
+second :: DigitStore -> Word8
+second = fromIntegral
 
 -- for loop recursively...
 writeMantissa :: (Mantissa a) => Ptr Word8 -> Int -> Int -> a -> IO (Ptr Word8)
@@ -159,34 +164,35 @@ writeMantissa ptr olength i mantissa
   | mantissa >= 10000 = do
       let (m', c) = mantissa `divMod` 10000
           (c1, c0) = c `divMod` 100
-      copy (digit_table ! fromIntegral c0) (ptr `plusPtr` (olength - i - 1))
-      copy (digit_table ! fromIntegral c1) (ptr `plusPtr` (olength - i - 3))
+      copy (digit_table `unsafeAt` fromIntegral c0) (ptr `plusPtr` (olength - i - 1))
+      copy (digit_table `unsafeAt` fromIntegral c1) (ptr `plusPtr` (olength - i - 3))
       writeMantissa ptr olength (i + 4) m'
   | mantissa >= 100 = do
       let (m', c) = mantissa `divMod` 100
-      copy (digit_table ! fromIntegral c) (ptr `plusPtr` (olength - i - 1))
+      copy (digit_table `unsafeAt` fromIntegral c) (ptr `plusPtr` (olength - i - 1))
       writeMantissa ptr olength (i + 2) m'
   | mantissa >= 10 = do
-      let bs = digit_table ! fromIntegral mantissa
-      poke (ptr `plusPtr` (olength  - i)) (BS.last bs)
-      poke ptr (BS.head bs)
-      finalize ptr
+      let bs = digit_table `unsafeAt` fromIntegral mantissa
+      poke (ptr `plusPtr` 2) (first bs)
+      poke (ptr `plusPtr` 1) (BS.c2w '.')
+      poke ptr (second bs)
+      return (ptr `plusPtr` (olength + 1))
   | otherwise = do
       poke ptr (toAscii mantissa :: Word8)
-      finalize ptr
-  where finalize p = if olength > 1
-                        then poke (p `plusPtr` 1) (BS.c2w '.') >> return (p `plusPtr` (olength + 1))
-                        else return (p `plusPtr` 1)
+      -- returning a truncated length if olength == 1 means we can always poke
+      -- the ptr here. might be faster to wait for the branch
+      poke (ptr `plusPtr` 1) (BS.c2w '.')
+      return $ ptr `plusPtr` if olength > 1 then (olength + 1) else 1
 
 writeExponent :: Ptr Word8 -> Int32 -> IO (Ptr Word8)
 writeExponent ptr exponent
   | exponent >= 100 = do
       let (e1, e0) = exponent `divMod` 10
-      copy (digit_table ! e1) ptr
+      copy (digit_table `unsafeAt` fromIntegral e1) ptr
       poke (ptr `plusPtr` 2) (toAscii e0 :: Word8)
       return $ ptr `plusPtr` 3
   | exponent >= 10 = do
-      copy (digit_table ! exponent) ptr
+      copy (digit_table `unsafeAt` fromIntegral exponent) ptr
       return $ ptr `plusPtr` 2
   | otherwise = do
       poke ptr (toAscii exponent)
@@ -259,15 +265,15 @@ writeRightAligned ptr v
   | v >= 10000 = do
       let (v', c) = v `divMod` 10000
           (c1, c0) = c `divMod` 100
-      copy (digit_table ! fromIntegral c0) (ptr `plusPtr` (-2))
-      copy (digit_table ! fromIntegral c1) (ptr `plusPtr` (-4))
+      copy (digit_table `unsafeAt` fromIntegral c0) (ptr `plusPtr` (-2))
+      copy (digit_table `unsafeAt` fromIntegral c1) (ptr `plusPtr` (-4))
       writeRightAligned (ptr `plusPtr` (-4)) v'
   | v >= 100 = do
       let (v', c) = v `divMod` 100
-      copy (digit_table ! fromIntegral c) (ptr `plusPtr` (-2))
+      copy (digit_table `unsafeAt` fromIntegral c) (ptr `plusPtr` (-2))
       writeRightAligned (ptr `plusPtr` (-2)) v'
   | v >= 10 = do
-      copy (digit_table ! fromIntegral v) (ptr `plusPtr` (-2))
+      copy (digit_table `unsafeAt` fromIntegral v) (ptr `plusPtr` (-2))
   | otherwise = do
       poke (ptr `plusPtr` (-1)) (toAscii v :: Word8)
 
