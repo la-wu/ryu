@@ -23,6 +23,7 @@ module Data.Floating.Ryu.Common
     , appendNDigits
     , append9Digits
     , toCharsScientific
+    , toCharsBuffered
     , toCharsFixed
     , toChars
     ) where
@@ -197,7 +198,7 @@ writeMantissa ptr olength i mantissa
       poke ptr (second bs)
       return (ptr `plusPtr` (olength + 1))
   | otherwise = do
-      poke ptr (toAscii mantissa :: Word8)
+      poke ptr (toAscii mantissa)
       -- returning a truncated length if olength == 1 means we can always poke
       -- the ptr here. might be faster to wait for the branch
       poke (ptr `plusPtr` 1) (BS.c2w '.')
@@ -225,9 +226,13 @@ writeSign ptr False = return ptr
 
 toCharsScientific :: (Mantissa a) => Bool -> a -> Int32 -> BS.ByteString
 toCharsScientific sign mantissa exponent = unsafePerformIO $ do
-    let olength = decimalLength mantissa
     fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
+    toCharsBuffered fp sign mantissa exponent
+
+toCharsBuffered :: (Mantissa a) => ForeignPtr Word8 -> Bool -> a -> Int32 -> IO BS.ByteString
+toCharsBuffered fp sign mantissa exponent =
     withForeignPtr fp $ \p0 -> do
+        let olength = decimalLength mantissa
         p1 <- writeSign p0 sign
         p2 <- writeMantissa p1 olength 0 mantissa
         poke p2 (BS.c2w 'E')
