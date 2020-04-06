@@ -21,9 +21,6 @@ floats n l u = fmap ( force
 instance NFData Data.Floating.Ryu.F2S.FloatingDecimal where
     rnf (Data.Floating.Ryu.F2S.FloatingDecimal mantissa exponent) = rnf mantissa `seq` rnf exponent
 
-f2sBuffered :: ForeignPtr Word8 -> Float -> IO BS.ByteString
-f2sBuffered fp = f2s' (toCharsBuffered fp) (return ... BS.packChars ... special)
-
 main :: IO ()
 main = do
     tenths <- floats 30 0.1 1

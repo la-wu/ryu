@@ -1,11 +1,13 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE Strict, StrictData #-}
+{-# LANGUAGE MagicHash #-}
 
 module Data.Floating.Ryu.F2S
     ( f2s
     , f2sFixed
     , f2sScientific
     , f2sGeneral
+    , f2sBuffered
     , f2sScientific'
     , f2sFixed'
     , f2s'
@@ -30,7 +32,7 @@ import Control.Monad (foldM)
 import Control.Monad.ST
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import Foreign.Ptr (minusPtr)
-import GHC.Word (Word32, Word64)
+import GHC.Word (Word8, Word32, Word64)
 import System.IO.Unsafe (unsafePerformIO)
 
 float_mantissa_bits :: Word32
@@ -263,6 +265,9 @@ f2s' formatter special f =
 
 f2sScientific' :: Float -> BS.ByteString
 f2sScientific' = f2s' toCharsScientific (BS.packChars ... special)
+
+f2sBuffered :: ForeignPtr Word8 -> Float -> IO BS.ByteString
+f2sBuffered fp = f2s' (toCharsBuffered fp) (return ... BS.packChars ... special)
 
 -- manual long division
 largeFloatToChars :: Bool -> Word32 -> Int32 -> BS.ByteString

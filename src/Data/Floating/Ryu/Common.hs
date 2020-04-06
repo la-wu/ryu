@@ -179,7 +179,9 @@ second :: DigitStore -> Word8
 second = fromIntegral
 
 -- for loop recursively...
-writeMantissa :: (Mantissa a) => Ptr Word8 -> Int -> Int -> a -> IO (Ptr Word8)
+{-# SPECIALIZE writeMantissa :: Ptr Word8 -> Int -> Int -> Word32 -> IO (Ptr Word8) #-}
+{-# SPECIALIZE writeMantissa :: Ptr Word8 -> Int -> Int -> Word64 -> IO (Ptr Word8) #-}
+writeMantissa :: (Integral a) => Ptr Word8 -> Int -> Int -> a -> IO (Ptr Word8)
 writeMantissa ptr olength i mantissa
   | mantissa >= 10000 = do
       let (m', c) = mantissa `quotRem` 10000
@@ -224,11 +226,17 @@ writeSign ptr True = do
     return $ ptr `plusPtr` 1
 writeSign ptr False = return ptr
 
+{-# INLINABLE toCharsScientific #-}
+{-# SPECIALIZE toCharsScientific :: Bool -> Word32 -> Int32 -> BS.ByteString #-}
+{-# SPECIALIZE toCharsScientific :: Bool -> Word64 -> Int32 -> BS.ByteString #-}
 toCharsScientific :: (Mantissa a) => Bool -> a -> Int32 -> BS.ByteString
 toCharsScientific sign mantissa exponent = unsafePerformIO $ do
     fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
     toCharsBuffered fp sign mantissa exponent
 
+{-# INLINABLE toCharsBuffered #-}
+{-# SPECIALIZE toCharsBuffered :: ForeignPtr Word8 -> Bool -> Word32 -> Int32 -> IO BS.ByteString #-}
+{-# SPECIALIZE toCharsBuffered :: ForeignPtr Word8 -> Bool -> Word64 -> Int32 -> IO BS.ByteString #-}
 toCharsBuffered :: (Mantissa a) => ForeignPtr Word8 -> Bool -> a -> Int32 -> IO BS.ByteString
 toCharsBuffered fp sign mantissa exponent =
     withForeignPtr fp $ \p0 -> do
@@ -248,6 +256,9 @@ toCharsBuffered fp sign mantissa exponent =
 -- fixed implementation derived from MSVC STL
 --
 
+{-# INLINABLE trimmedDigits #-}
+{-# SPECIALIZE trimmedDigits :: Word32 -> Int32 -> Bool #-}
+{-# SPECIALIZE trimmedDigits :: Word64 -> Int32 -> Bool #-}
 trimmedDigits :: (Mantissa a) => a -> Int32 -> Bool
 trimmedDigits mantissa exponent =
     -- Ryu generated X: mantissa * 10^exponent
@@ -284,6 +295,9 @@ trimmedDigits mantissa exponent =
         shiftMantissa = mantissa .>> zeros
      in shiftMantissa > max_shifted_mantissa `unsafeAt` fromIntegral exponent
 
+{-# INLINABLE writeRightAligned #-}
+{-# SPECIALIZE writeRightAligned :: Ptr Word8 -> Word32 -> IO () #-}
+{-# SPECIALIZE writeRightAligned :: Ptr Word8 -> Word64 -> IO () #-}
 writeRightAligned :: (Mantissa a) => Ptr Word8 -> a -> IO ()
 writeRightAligned ptr v
   | v >= 10000 = do
@@ -331,6 +345,9 @@ append9Digits ptr w = do
 -- returns Nothing when we can't represent through ryu. need to fall back to a
 -- higher precision method that is dependent on the original (float / double)
 -- input value and type
+{-# INLINABLE toCharsFixed #-}
+{-# SPECIALIZE toCharsFixed :: Bool -> Word32 -> Int32 -> Maybe BS.ByteString #-}
+{-# SPECIALIZE toCharsFixed :: Bool -> Word64 -> Int32 -> Maybe BS.ByteString #-}
 toCharsFixed :: (Show a, Mantissa a) => Bool -> a -> Int32 -> Maybe BS.ByteString
 toCharsFixed sign mantissa exponent = unsafePerformIO $ do
     fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
@@ -367,6 +384,9 @@ toCharsFixed sign mantissa exponent = unsafePerformIO $ do
                       poke (p1 `plusPtr` 1) (BS.c2w '.')
                       return finalize
 
+{-# INLINABLE toChars #-}
+{-# SPECIALIZE toChars :: Bool -> Word32 -> Int32 -> String #-}
+{-# SPECIALIZE toChars :: Bool -> Word64 -> Int32 -> String #-}
 toChars :: (Mantissa a) => Bool -> a -> Int32 -> String
 toChars s m = BS.unpackChars . toCharsScientific s m
 
