@@ -45,15 +45,19 @@ import Foreign.Ptr (Ptr, minusPtr, plusPtr, castPtr)
 import Foreign.Storable (poke)
 import System.IO.Unsafe (unsafePerformIO)
 
+{-# INLINABLE (.>>) #-}
 (.>>) :: (Bits a, Integral b) => a -> b -> a
-a .>> s = shiftR a (fromIntegral s)
+a .>> s = unsafeShiftR a (fromIntegral s)
 
+{-# INLINABLE (.<<) #-}
 (.<<) :: (Bits a, Integral b) => a -> b -> a
-a .<< s = shiftL a (fromIntegral s)
+a .<< s = unsafeShiftL a (fromIntegral s)
 
+{-# INLINABLE mask #-}
 mask :: (Bits a, Integral a) => a -> a
 mask = flip (-) 1 . (.<<) 1
 
+{-# INLINABLE asWord #-}
 asWord :: Integral w => Bool -> w
 asWord = fromIntegral . fromEnum
 
@@ -120,14 +124,20 @@ specialFixed    False   True    _      =    "Infinity"
 
 
 -- Returns e == 0 ? 1 : ceil(log_2(5^e)); requires 0 <= e <= 3528.
+{-# INLINABLE pow5bits #-}
+{-# SPECIALIZE pow5bits :: Int32 -> Int32 #-}
 pow5bits :: (Bits a, Integral a) => a -> a
 pow5bits e = (e * 1217359) .>> 19 + 1
 
 -- Returns floor(log_10(2^e)); requires 0 <= e <= 1650.
+{-# INLINABLE log10pow2 #-}
+{-# SPECIALIZE log10pow2 :: Int32 -> Int32 #-}
 log10pow2 :: (Bits a, Integral a) => a -> a
 log10pow2 e = (e * 78913) .>> 18
 
 -- Returns floor(log_10(5^e)); requires 0 <= e <= 2620.
+{-# INLINABLE log10pow5 #-}
+{-# SPECIALIZE log10pow5 :: Int32 -> Int32 #-}
 log10pow5 :: (Bits a, Integral a) => a -> a
 log10pow5 e = (e * 732928) .>> 20
 

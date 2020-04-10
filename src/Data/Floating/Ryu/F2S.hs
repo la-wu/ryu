@@ -153,10 +153,19 @@ trimTrailing d
                        else id
      in (forceDown d'', r + r')
 
+trimNoTrailing' :: Word32 -> Word32 -> Word32 -> Word32 -> Int32 -> (Word32, Word32, Word32, Int32)
+trimNoTrailing' vu vv vw lastRemovedDigit count
+  | vw' > vu' = trimNoTrailing' vu' vv' vw' ld (count+1)
+  | otherwise = (vu, vv, lastRemovedDigit, count)
+  where
+      (vv', ld) = vv `quotRem` 10
+      vu' = vu `quot` 10
+      vw' = vw `quot` 10
+
 trimNoTrailing :: BoundsState -> (BoundsState, Int32)
-trimNoTrailing d
-  | differ d = fmap ((+) 1) . trimNoTrailing $ d & removeDigit
-  | otherwise = (d, 0)
+trimNoTrailing s =
+    let (vu', vv', ld, count) = trimNoTrailing' (s ^. vu) (s ^. vv) (s ^. vw) (s ^. lastRemovedDigit) 0
+     in (BoundsState vu' vv' 0 ld False False, count)
 
 f2dGT :: Int32 -> Word32 -> Word32 -> Word32 -> (BoundsState, Int32)
 f2dGT e2 u v w =
