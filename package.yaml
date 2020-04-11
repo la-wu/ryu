@@ -26,6 +26,7 @@ dependencies:
 - floating-bits
 - lens
 - wide-word
+- ghc-prim
 
 library:
   source-dirs: src

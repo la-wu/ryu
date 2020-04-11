@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE Strict, StrictData #-}
-{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE MagicHash, UnboxedTuples #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Data.Floating.Ryu.F2S
     ( f2s
@@ -19,12 +20,11 @@ import Debug.Trace
 import Data.Array.Unboxed
 import Data.Array.MArray
 import Data.Array.ST
-import Data.Array.Base (unsafeAt, unsafeRead, unsafeWrite)
+import Data.Array.Base (UArray(..), unsafeAt, unsafeRead, unsafeWrite)
 import Data.Bits.Floating
 import Data.Bits
 import Data.Char (ord)
 import Data.Floating.Ryu.Common
-import Data.Int (Int32)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BS
 import Control.Lens hiding ((...))
@@ -32,7 +32,10 @@ import Control.Monad (foldM)
 import Control.Monad.ST
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import Foreign.Ptr (minusPtr)
-import GHC.Word (Word8, Word32, Word64)
+import GHC.Int (Int32(..))
+import GHC.Word (Word8, Word32(..), Word64(..))
+import GHC.Exts
+import GHC.Prim
 import System.IO.Unsafe (unsafePerformIO)
 
 float_mantissa_bits :: Word32
@@ -86,21 +89,30 @@ toS = fromIntegral
 toU :: Int32 -> Word32
 toU = fromIntegral
 
-mulShift32 :: Word32 -> Word64 -> Int32 -> Word32
-mulShift32 m factor shift =
-    let factorLo = fromIntegral factor :: Word32
-        factorHi = fromIntegral (factor .>> 32) :: Word32
-        m' = fromIntegral m :: Word64
-        bits0 = m' * fromIntegral factorLo
-        bits1 = m' * fromIntegral factorHi
-        sum = bits0 .>> 32 + bits1
-     in fromIntegral $ sum .>> (fromIntegral $ shift - 32)
+mulShift32Unboxed :: Word# -> Word# -> Int# -> Word#
+mulShift32Unboxed m factor shift =
+    let factorLo = narrow32Word# factor
+        factorHi = factor `uncheckedShiftRL#` 32#
+        bits0 = m `timesWord#` factorLo
+        bits1 = m `timesWord#` factorHi
+        sum = (bits0 `uncheckedShiftRL#` 32#) `plusWord#` bits1
+     in narrow32Word# (sum `uncheckedShiftRL#` (shift -# 32#))
 
-mulPow5InvDivPow2 :: Word32 -> Word32 -> Int32 -> Word32
-mulPow5InvDivPow2 m q j = mulShift32 m (float_pow5_inv_split `unsafeAt` fromIntegral q) j
+get_float_pow5_inv_split :: Int# -> Word#
+get_float_pow5_inv_split i =
+    let (UArray _ _ _ arr) = float_pow5_inv_split
+     in indexWord64Array# arr i
 
-mulPow5DivPow2 :: Word32 -> Word32 -> Int32 -> Word32
-mulPow5DivPow2 m i j = mulShift32 m (float_pow5_split `unsafeAt` fromIntegral i) j
+get_float_pow5_split :: Int# -> Word#
+get_float_pow5_split i =
+    let (UArray _ _ _ arr) = float_pow5_split
+     in indexWord64Array# arr i
+
+mulPow5InvDivPow2 :: Word# -> Word# -> Int# -> Word#
+mulPow5InvDivPow2 m q j = mulShift32Unboxed m (get_float_pow5_inv_split (word2Int# q)) j
+
+mulPow5DivPow2 :: Word# -> Int# -> Int# -> Word#
+mulPow5DivPow2 m i j = mulShift32Unboxed m (get_float_pow5_split i) j
 
 acceptBounds :: Word32 -> Bool
 acceptBounds v = v `quot` 4 .&. 1 == 0
@@ -153,68 +165,112 @@ trimTrailing d
                        else id
      in (forceDown d'', r + r')
 
-trimNoTrailing' :: Word32 -> Word32 -> Word32 -> Word32 -> Int32 -> (Word32, Word32, Word32, Int32)
-trimNoTrailing' vu vv vw lastRemovedDigit count
-  | vw' > vu' = trimNoTrailing' vu' vv' vw' ld (count+1)
-  | otherwise = (vu, vv, lastRemovedDigit, count)
-  where
-      (vv', ld) = vv `quotRem` 10
-      vu' = vu `quot` 10
-      vw' = vw `quot` 10
+trimNoTrailing' :: Word# -> Word# -> Word# -> Word# -> Int# -> (# Word#, Word#, Word#, Int# #)
+trimNoTrailing' vu vv vw lastRemovedDigit count =
+    case vw' `gtWord#` vu' of
+      1# -> trimNoTrailing' vu' vv' vw' ld (count +# 1#)
+      0# -> (# vu, vv, lastRemovedDigit, count #)
+    where
+        (# vv', ld #) = vv `quotRemWord#` int2Word# 10#
+        vu' = vu `quotWord#` int2Word# 10#
+        vw' = vw `quotWord#` int2Word# 10#
 
 trimNoTrailing :: BoundsState -> (BoundsState, Int32)
-trimNoTrailing s =
-    let (vu', vv', ld, count) = trimNoTrailing' (s ^. vu) (s ^. vv) (s ^. vw) (s ^. lastRemovedDigit) 0
-     in (BoundsState vu' vv' 0 ld False False, count)
+trimNoTrailing (BoundsState (W32# vu) (W32# vv) (W32# vw) (W32# ld) _ _) =
+    let (# vu', vv', ld', c' #) = trimNoTrailing' vu vv vw ld 0#
+     in (BoundsState (W32# vu') (W32# vv') 0 (W32# ld') False False, I32# c')
+
+pow5bitsUnboxed :: Int# -> Int#
+pow5bitsUnboxed e = (e *# 1217359#) `uncheckedIShiftRL#` 19# +# 1#
+
+log10pow2Unboxed :: Int# -> Int#
+log10pow2Unboxed e = (e *# 78913#) `uncheckedIShiftRL#` 18#
+
+log10pow5Unboxed :: Int# -> Int#
+log10pow5Unboxed e = (e *# 732928#) `uncheckedIShiftRL#` 20#
+
+acceptBoundsUnboxed :: Word# -> Int#
+acceptBoundsUnboxed v = ((v `quotWord#` int2Word# 4#) `and#` (int2Word# 1#)) `eqWord#` int2Word# 0#
+
+multipleOfPowerOf2Unboxed :: Word# -> Word# -> Int#
+multipleOfPowerOf2Unboxed value p = (value `and#` ((int2Word# 1# `uncheckedShiftL#` word2Int# p) `minusWord#` int2Word# 1#)) `eqWord#` int2Word# 0#
+
+get_pow5_32 :: Int# -> Word#
+get_pow5_32 i =
+    let (UArray _ _ _ arr) = pow5_32
+     in indexWord32Array# arr i
+
+multipleOfPowerOf5_32Unboxed :: Word# -> Word# -> Int#
+multipleOfPowerOf5_32Unboxed value p =
+    (value `remWord#` (get_pow5_32 (word2Int# p))) `eqWord#` int2Word# 0#
+
+boxToBool :: Int# -> Bool
+boxToBool i = case i of
+                1# -> True
+                0# -> False
+
+multipleOfPowerOf5_32UnboxedB :: Word# -> Word# -> Bool
+multipleOfPowerOf5_32UnboxedB value p = boxToBool (multipleOfPowerOf5_32Unboxed value p)
+
+unbox :: Int -> Int#
+unbox (I# i) = i
 
 f2dGT :: Int32 -> Word32 -> Word32 -> Word32 -> (BoundsState, Int32)
-f2dGT e2 u v w =
-    let q = toU $ log10pow2 e2
-        e10 = toS $ q
-        k = float_pow5_inv_bitcount + pow5bits (toS q) - 1
-        i = -e2 + toS q + k
+f2dGT (I32# e2) (W32# u) (W32# v) (W32# w) =
+    let q = int2Word# (log10pow2Unboxed e2)
+        e10 = word2Int# q
+        k = unbox float_pow5_inv_bitcount +# pow5bitsUnboxed (word2Int# q) -# 1#
+        i = negateInt# e2 +# word2Int# q +# k
         vu = mulPow5InvDivPow2 u q i
         vv = mulPow5InvDivPow2 v q i
         vw = mulPow5InvDivPow2 w q i
         lastRemovedDigit =
-            if q /= 0 && (vw - 1) `quot` 10 <= vu `quot` 10
+            case (q `neWord#` int2Word# 0#) `andI#` (((vw `minusWord#` int2Word# 1#) `quotWord#` int2Word# 10#) `leWord#` (vu `quotWord#` int2Word# 10#)) of
                -- We need to know one removed digit even if we are not going to loop
                -- below. We could use q = X - 1 above, except that would require 33
                -- bits for the result, and we've found that 32-bit arithmetic is
                -- faster even on 64-bit machines.
-               then let l = float_pow5_inv_bitcount + pow5bits (toS q - 1) - 1
-                     in (mulPow5InvDivPow2 v (q - 1) (-e2 + toS q - 1 + l)) `rem` 10
-               else 0
-        (vvIsTrailingZeros, vuIsTrailingZeros, vw') =
+               1# -> let l = unbox float_pow5_inv_bitcount +# pow5bitsUnboxed (word2Int# q -# 1#) -# 1#
+                      in (mulPow5InvDivPow2 v (q `minusWord#` int2Word# 1#) (negateInt# e2 +# word2Int# q -# 1# +# l)) `remWord#` int2Word# 10#
+               0# -> int2Word# 0#
+        (# vvIsTrailingZeros, vuIsTrailingZeros, vw' #) =
             case () of
-              _ | q <= 9 && v `rem` 5 == 0 -> (multipleOfPowerOf5_32 v q, False, vw)
-                | q <= 9 && acceptBounds v -> (False, multipleOfPowerOf5_32 u q, vw)
-                | q <= 9                   -> (False, False, vw - asWord (multipleOfPowerOf5_32 w q))
-                | otherwise                -> (False, False, vw)
-     in (BoundsState vu vv vw' lastRemovedDigit vuIsTrailingZeros vvIsTrailingZeros, e10)
+              _ | boxToBool ((q `leWord#` int2Word# 9#) `andI#` ((v `remWord#` int2Word# 5#) `eqWord#` int2Word# 0#))
+                    -> (# multipleOfPowerOf5_32UnboxedB v q, False, vw #)
+                | boxToBool ((q `leWord#` int2Word# 9#) `andI#` acceptBoundsUnboxed v)
+                    -> (# False, multipleOfPowerOf5_32UnboxedB u q, vw #)
+                | boxToBool (q `leWord#` int2Word# 9#)
+                    -> (# False, False, vw `minusWord#` int2Word# (multipleOfPowerOf5_32Unboxed w q) #)
+                | otherwise
+                    -> (# False, False, vw #)
+     in (BoundsState (W32# vu) (W32# vv) (W32# vw') (W32# lastRemovedDigit) vuIsTrailingZeros vvIsTrailingZeros, (I32# e10))
 
 f2dLT :: Int32 -> Word32 -> Word32 -> Word32 -> (BoundsState, Int32)
-f2dLT e2 u v w =
-    let q = toU $ log10pow5 (-e2)
-        e10 = toS q + e2
-        i = -e2 - toS q
-        k = pow5bits i - float_pow5_bitcount
-        j = toS q - k
-        vu = mulPow5DivPow2 u (toU i) j
-        vv = mulPow5DivPow2 v (toU i) j
-        vw = mulPow5DivPow2 w (toU i) j
+f2dLT (I32# e2) (W32# u) (W32# v) (W32# w) =
+    let q = int2Word# (log10pow5Unboxed (negateInt# e2))
+        e10 = word2Int# q +# e2
+        i = (negateInt# e2) -# word2Int# q
+        k = pow5bitsUnboxed i -# unbox float_pow5_bitcount
+        j = word2Int# q -# k
+        vu = mulPow5DivPow2 u i j
+        vv = mulPow5DivPow2 v i j
+        vw = mulPow5DivPow2 w i j
         lastRemovedDigit =
-            if q /= 0 && (vw - 1) `quot` 10 <= vu `quot` 10
-               then let j = toS q - 1 - (pow5bits (i + 1) - float_pow5_bitcount)
-                     in (mulPow5DivPow2 v (toU $ i + 1) j) `rem` 10
-               else 0
-        (vvIsTrailingZeros, vuIsTrailingZeros, vw') =
+            case (q `neWord#` int2Word# 0#) `andI#` (((vw `minusWord#` int2Word# 1#) `quotWord#` int2Word# 10#) `leWord#` (vu `quotWord#` int2Word# 10#)) of
+              1# -> let j = word2Int# q -# 1# -# (pow5bitsUnboxed (i +# 1#) -# unbox float_pow5_bitcount)
+                     in (mulPow5DivPow2 v (i +# 1#) j) `remWord#` int2Word# 10#
+              0# -> int2Word# 0#
+        (# vvIsTrailingZeros, vuIsTrailingZeros, vw' #) =
             case () of
-              _ | q <= 1 && acceptBounds v -> (True, w - v == 2, vw) -- mmShift == 1
-                | q <= 1                   -> (True, False, vw - 1)
-                | q < 31                   -> (multipleOfPowerOf2 v (q - 1), False, vw)
-                | otherwise                -> (False, False, vw)
-     in (BoundsState vu vv vw' lastRemovedDigit vuIsTrailingZeros vvIsTrailingZeros, e10)
+              _ | boxToBool ((q `leWord#` int2Word# 1#) `andI#` acceptBoundsUnboxed v)
+                    -> (# True, boxToBool ((w `minusWord#` v) `eqWord#` int2Word# 2#), vw #) -- mmShift == 1
+                | boxToBool (q `leWord#` int2Word# 1#)
+                    -> (# True, False, vw `minusWord#` int2Word# 1# #)
+                | boxToBool (q `ltWord#` int2Word# 31#)
+                    -> (# boxToBool (multipleOfPowerOf2Unboxed v (q `minusWord#` int2Word# 1#)), False, vw #)
+                | otherwise
+                    -> (# False, False, vw #)
+     in (BoundsState (W32# vu) (W32# vv) (W32# vw') (W32# lastRemovedDigit) vuIsTrailingZeros vvIsTrailingZeros, (I32# e10))
 
 roundUp :: Bool -> BoundsState -> Bool
 roundUp b s = (s ^. vv == s ^. vu && b) || s ^. lastRemovedDigit >= 5
@@ -228,8 +284,8 @@ f2d m e =
                 then m
                 else (1 .<< float_mantissa_bits) .|. m
         ef = if e == 0
-                then toS 1 - toS float_bias - toS float_mantissa_bits
-                else toS e - toS float_bias - toS float_mantissa_bits
+                then toS 1 - toS (float_bias + float_mantissa_bits)
+                else toS e - toS (float_bias + float_mantissa_bits)
         e2 = ef - 2
         -- Step 2. 3-tuple (u, v, w) * 2**e2
         u = 4 * mf - 1 - asWord (m /= 0 || e <= 1)
@@ -261,7 +317,7 @@ breakdown f = let bits = coerceToWord f
 f2Intermediate :: Float -> FloatingDecimal
 f2Intermediate f = let (sign, mantissa, exponent) = breakdown f
                     in if (exponent == mask float_exponent_bits) || (exponent == 0 && mantissa == 0)
-                          then FloatingDecimal mantissa (fromIntegral exponent)
+                          then FloatingDecimal mantissa (toS exponent)
                           else f2d mantissa exponent
 
 f2s' :: (Bool -> Word32 -> Int32 -> a) -> (Bool -> Bool -> Bool -> a) -> Float -> a

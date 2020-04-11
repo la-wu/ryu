@@ -16,6 +16,7 @@ module Data.Floating.Ryu.Common
     , pow5bits
     , log10pow2
     , log10pow5
+    , pow5_32
     , multipleOfPowerOf5_32
     , multipleOfPowerOf5_64
     , multipleOfPowerOf2
