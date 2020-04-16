@@ -30,8 +30,10 @@ module Data.Floating.Ryu.Common
     , toChars
     , quot10
     , rem10
-    , rem5
     , quotRem10
+    , quot5
+    , rem5
+    , quotRem5
     ) where
 
 import Data.Array.Unboxed
@@ -151,17 +153,24 @@ log10pow5 e = (e * 732928) .>> 20
 quot10 :: Word# -> Word#
 quot10 w = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 35#
 
-rem5 :: Word# -> Word#
-rem5 w = let w' = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 34#
-          in w `minusWord#` (w' `timesWord#` int2Word# 5#)
-
 rem10 :: Word# -> Word#
-rem10 w = let w' = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 35#
+rem10 w = let w' = quot10 w
            in w `minusWord#` (w' `timesWord#` int2Word# 10#)
 
 quotRem10 :: Word# -> (# Word#, Word# #)
-quotRem10 w = let w' = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 35#
+quotRem10 w = let w' = quot10 w
                in (# w', w `minusWord#` (w' `timesWord#` int2Word# 10#) #)
+
+quot5 :: Word# -> Word#
+quot5 w = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 34#
+
+rem5 :: Word# -> Word#
+rem5 w = let w' = quot5 w
+          in w `minusWord#` (w' `timesWord#` int2Word# 5#)
+
+quotRem5 :: Word# -> (# Word#, Word# #)
+quotRem5 w = let w' = quot5 w
+              in (# w', w `minusWord#` (w' `timesWord#` int2Word# 5#) #)
 
 quotRem10Boxed :: Word32 -> (Word32, Word32)
 quotRem10Boxed (W32# w) = let (# q, r #) = quotRem10 w in (W32# q, W32# r)

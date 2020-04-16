@@ -195,14 +195,15 @@ acceptBoundsUnboxed v = ((v `uncheckedShiftRL#` 2#) `and#` (int2Word# 1#)) `eqWo
 multipleOfPowerOf2Unboxed :: Word# -> Word# -> Int#
 multipleOfPowerOf2Unboxed value p = (value `and#` ((int2Word# 1# `uncheckedShiftL#` word2Int# p) `minusWord#` int2Word# 1#)) `eqWord#` int2Word# 0#
 
-get_pow5_32 :: Int# -> Word#
-get_pow5_32 i =
-    let (UArray _ _ _ arr) = pow5_32
-     in indexWord32Array# arr i
+pow5_factor :: Word# -> Int# -> Int#
+pow5_factor w count
+  = let (# q, r #) = quotRem5 w
+     in case r `eqWord#` int2Word# 0# of
+          0# -> count
+          1# -> pow5_factor q (count +# 1#)
 
 multipleOfPowerOf5_32Unboxed :: Word# -> Word# -> Int#
-multipleOfPowerOf5_32Unboxed value p =
-    (value `remWord#` (get_pow5_32 (word2Int# p))) `eqWord#` int2Word# 0#
+multipleOfPowerOf5_32Unboxed value p = pow5_factor value 0# >=# word2Int# p
 
 boxToBool :: Int# -> Bool
 boxToBool i = case i of
