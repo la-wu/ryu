@@ -36,7 +36,18 @@ main = do
             ]
         suite strength mapper = suite' strength (fmap mapper)
     defaultMain
-        [ bgroup "f2Intermediate" $ suite nf f2Intermediate
+        [ bgroup "baseline" [ bench "id" $ nf (fmap id) tenths ]
+        , bgroup "f2Intermediate" $ suite nf f2Intermediate
+        , bgroup "trailing" $
+            [ bench "0.1"         $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.1)
+            , bench "0.11"        $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.11)
+            , bench "0.111"       $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.111)
+            , bench "0.1111"      $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.1111)
+            , bench "0.11111"     $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.11111)
+            , bench "0.111111"    $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.111111)
+            , bench "0.1111111"   $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.1111111)
+            , bench "0.11111111"  $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.11111111)
+            ]
         , bgroup "f2s E Buffered" $ suite' nfAppIO (sequence . fmap (f2sBuffered fp))
         , bgroup "f2s E BS" $ suite nf f2sScientific'
         , bgroup "f2s F BS" $ suite nf f2sFixed'
