@@ -1,5 +1,6 @@
 {-# LANGUAGE Strict, StrictData #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MagicHash, UnboxedTuples #-}
 
 module Data.Floating.Ryu.Common
     ( (.>>)
@@ -27,6 +28,10 @@ module Data.Floating.Ryu.Common
     , toCharsBuffered
     , toCharsFixed
     , toChars
+    , quot10
+    , rem10
+    , rem5
+    , quotRem10
     ) where
 
 import Data.Array.Unboxed
@@ -39,7 +44,8 @@ import qualified Data.ByteString.Internal as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Builder.Extra as BBE
 import qualified Data.ByteString.Lazy.Char8 as BL
-import GHC.Word (Word8, Word16, Word32, Word64)
+import GHC.Word (Word8, Word16, Word32(..), Word64(..))
+import GHC.Prim
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import Foreign.Marshal.Utils (moveBytes)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr, castPtr)
@@ -142,6 +148,24 @@ log10pow2 e = (e * 78913) .>> 18
 log10pow5 :: (Bits a, Integral a) => a -> a
 log10pow5 e = (e * 732928) .>> 20
 
+quot10 :: Word# -> Word#
+quot10 w = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 35#
+
+rem5 :: Word# -> Word#
+rem5 w = let w' = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 34#
+          in w `minusWord#` (w' `timesWord#` int2Word# 5#)
+
+rem10 :: Word# -> Word#
+rem10 w = let w' = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 35#
+           in w `minusWord#` (w' `timesWord#` int2Word# 10#)
+
+quotRem10 :: Word# -> (# Word#, Word# #)
+quotRem10 w = let w' = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 35#
+               in (# w', w `minusWord#` (w' `timesWord#` int2Word# 10#) #)
+
+quotRem10Boxed :: Word32 -> (Word32, Word32)
+quotRem10Boxed (W32# w) = let (# q, r #) = quotRem10 w in (W32# q, W32# r)
+
 pow5_32 :: UArray Int Word32
 pow5_32 = listArray (0, 9) [5 ^ x | x <- [0..9]]
 
@@ -157,25 +181,35 @@ multipleOfPowerOf5_64 value p = value `mod` (pow5_64 `unsafeAt` fromIntegral p) 
 multipleOfPowerOf2 :: (Bits a, Integral a) => a -> a -> Bool
 multipleOfPowerOf2 value p = value .&. mask p == 0
 
-toAscii :: (Integral a, Integral b) => a -> b
-toAscii = fromIntegral . (+) (fromIntegral $ ord '0')
-
 class (IArray UArray a, FiniteBits a, Integral a) => Mantissa a where
     decimalLength :: a -> Int
     max_representable_pow10 :: a -> Int32
     max_shifted_mantissa :: UArray Int32 a
+    quotRem100 :: a -> (a, a)
+    quotRem10000 :: a -> (a, a)
 
 instance Mantissa Word32 where
     decimalLength = decimalLength9
     max_representable_pow10 = const 10
     max_shifted_mantissa = listArray (0, 10) [ (2^24 - 1) `quot` 5^x | x <- [0..10] ]
+    quotRem100 (W32# w)
+      = let w' = (w `timesWord#` int2Word# 1374389535#) `uncheckedShiftRL#` 37#
+         in (W32# w', W32# (w `minusWord#` (w' `timesWord#` int2Word# 100#)))
+    quotRem10000 (W32# w)
+      = let w' = (w `timesWord#` int2Word# 3518437209#) `uncheckedShiftRL#` 45#
+         in (W32# w', W32# (w `minusWord#` (w' `timesWord#` int2Word# 10000#)))
 
 instance Mantissa Word64 where
     decimalLength = decimalLength17
     max_representable_pow10 = const 22
     max_shifted_mantissa = listArray (0, 22) [ (2^53- 1) `quot` 5^x | x <- [0..22] ]
+    quotRem100 w = w `quotRem` 100
+    quotRem10000 w = w `quotRem` 10000
 
 type DigitStore = Word16
+
+toAscii :: (Integral a, Integral b) => a -> b
+toAscii = fromIntegral . (+) (fromIntegral $ ord '0')
 
 digit_table :: UArray Int32 DigitStore
 digit_table = listArray (0, 99) [ (toAscii b .<< 8) .|. toAscii a | a <- [0..9], b <- [0..9] ]
@@ -192,16 +226,16 @@ second = fromIntegral
 -- for loop recursively...
 {-# SPECIALIZE writeMantissa :: Ptr Word8 -> Int -> Int -> Word32 -> IO (Ptr Word8) #-}
 {-# SPECIALIZE writeMantissa :: Ptr Word8 -> Int -> Int -> Word64 -> IO (Ptr Word8) #-}
-writeMantissa :: (Integral a) => Ptr Word8 -> Int -> Int -> a -> IO (Ptr Word8)
+writeMantissa :: (Mantissa a) => Ptr Word8 -> Int -> Int -> a -> IO (Ptr Word8)
 writeMantissa ptr olength i mantissa
   | mantissa >= 10000 = do
-      let (m', c) = mantissa `quotRem` 10000
-          (c1, c0) = c `quotRem` 100
+      let (m', c) = quotRem10000 mantissa
+          (c1, c0) = quotRem100 c
       copy (digit_table `unsafeAt` fromIntegral c0) (ptr `plusPtr` (olength - i - 1))
       copy (digit_table `unsafeAt` fromIntegral c1) (ptr `plusPtr` (olength - i - 3))
       writeMantissa ptr olength (i + 4) m'
   | mantissa >= 100 = do
-      let (m', c) = mantissa `quotRem` 100
+      let (m', c) = quotRem100 mantissa
       copy (digit_table `unsafeAt` fromIntegral c) (ptr `plusPtr` (olength - i - 1))
       writeMantissa ptr olength (i + 2) m'
   | mantissa >= 10 = do
@@ -220,7 +254,7 @@ writeMantissa ptr olength i mantissa
 writeExponent :: Ptr Word8 -> Int32 -> IO (Ptr Word8)
 writeExponent ptr exponent
   | exponent >= 100 = do
-      let (e1, e0) = exponent `quotRem` 10
+      let (e1, e0) = quotRem10Boxed (fromIntegral exponent)
       copy (digit_table `unsafeAt` fromIntegral e1) ptr
       poke (ptr `plusPtr` 2) (toAscii e0 :: Word8)
       return $ ptr `plusPtr` 3
@@ -312,13 +346,13 @@ trimmedDigits mantissa exponent =
 writeRightAligned :: (Mantissa a) => Ptr Word8 -> a -> IO ()
 writeRightAligned ptr v
   | v >= 10000 = do
-      let (v', c) = v `quotRem` 10000
-          (c1, c0) = c `quotRem` 100
+      let (v', c) = quotRem10000 v
+          (c1, c0) = quotRem100 c
       copy (digit_table `unsafeAt` fromIntegral c0) (ptr `plusPtr` (-2))
       copy (digit_table `unsafeAt` fromIntegral c1) (ptr `plusPtr` (-4))
       writeRightAligned (ptr `plusPtr` (-4)) v'
   | v >= 100 = do
-      let (v', c) = v `quotRem` 100
+      let (v', c) = quotRem100 v
       copy (digit_table `unsafeAt` fromIntegral c) (ptr `plusPtr` (-2))
       writeRightAligned (ptr `plusPtr` (-2)) v'
   | v >= 10 = do
