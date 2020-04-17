@@ -151,26 +151,26 @@ log10pow5 :: (Bits a, Integral a) => a -> a
 log10pow5 e = (e * 732928) .>> 20
 
 quot10 :: Word# -> Word#
-quot10 w = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 35#
+quot10 w = (w `timesWord#` 3435973837##) `uncheckedShiftRL#` 35#
 
 rem10 :: Word# -> Word#
 rem10 w = let w' = quot10 w
-           in w `minusWord#` (w' `timesWord#` int2Word# 10#)
+           in w `minusWord#` (w' `timesWord#` 10##)
 
 quotRem10 :: Word# -> (# Word#, Word# #)
 quotRem10 w = let w' = quot10 w
-               in (# w', w `minusWord#` (w' `timesWord#` int2Word# 10#) #)
+               in (# w', w `minusWord#` (w' `timesWord#` 10##) #)
 
 quot5 :: Word# -> Word#
-quot5 w = (w `timesWord#` int2Word# 3435973837#) `uncheckedShiftRL#` 34#
+quot5 w = (w `timesWord#` 3435973837##) `uncheckedShiftRL#` 34#
 
 rem5 :: Word# -> Word#
 rem5 w = let w' = quot5 w
-          in w `minusWord#` (w' `timesWord#` int2Word# 5#)
+          in w `minusWord#` (w' `timesWord#` 5##)
 
 quotRem5 :: Word# -> (# Word#, Word# #)
 quotRem5 w = let w' = quot5 w
-              in (# w', w `minusWord#` (w' `timesWord#` int2Word# 5#) #)
+              in (# w', w `minusWord#` (w' `timesWord#` 5##) #)
 
 quotRem10Boxed :: Word32 -> (Word32, Word32)
 quotRem10Boxed (W32# w) = let (# q, r #) = quotRem10 w in (W32# q, W32# r)
@@ -202,11 +202,11 @@ instance Mantissa Word32 where
     max_representable_pow10 = const 10
     max_shifted_mantissa = listArray (0, 10) [ (2^24 - 1) `quot` 5^x | x <- [0..10] ]
     quotRem100 (W32# w)
-      = let w' = (w `timesWord#` int2Word# 1374389535#) `uncheckedShiftRL#` 37#
-         in (W32# w', W32# (w `minusWord#` (w' `timesWord#` int2Word# 100#)))
+      = let w' = (w `timesWord#` 1374389535##) `uncheckedShiftRL#` 37#
+         in (W32# w', W32# (w `minusWord#` (w' `timesWord#` 100##)))
     quotRem10000 (W32# w)
-      = let w' = (w `timesWord#` int2Word# 3518437209#) `uncheckedShiftRL#` 45#
-         in (W32# w', W32# (w `minusWord#` (w' `timesWord#` int2Word# 10000#)))
+      = let w' = (w `timesWord#` 3518437209##) `uncheckedShiftRL#` 45#
+         in (W32# w', W32# (w `minusWord#` (w' `timesWord#` 10000##)))
 
 instance Mantissa Word64 where
     decimalLength = decimalLength17

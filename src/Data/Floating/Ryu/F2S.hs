@@ -190,15 +190,15 @@ log10pow5Unboxed :: Int# -> Int#
 log10pow5Unboxed e = (e *# 732928#) `uncheckedIShiftRL#` 20#
 
 acceptBoundsUnboxed :: Word# -> Int#
-acceptBoundsUnboxed v = ((v `uncheckedShiftRL#` 2#) `and#` (int2Word# 1#)) `eqWord#` int2Word# 0#
+acceptBoundsUnboxed v = ((v `uncheckedShiftRL#` 2#) `and#` 1##) `eqWord#` 0##
 
 multipleOfPowerOf2Unboxed :: Word# -> Word# -> Int#
-multipleOfPowerOf2Unboxed value p = (value `and#` ((int2Word# 1# `uncheckedShiftL#` word2Int# p) `minusWord#` int2Word# 1#)) `eqWord#` int2Word# 0#
+multipleOfPowerOf2Unboxed value p = (value `and#` ((1## `uncheckedShiftL#` word2Int# p) `minusWord#` 1##)) `eqWord#` 0##
 
 pow5_factor :: Word# -> Int# -> Int#
 pow5_factor w count
   = let (# q, r #) = quotRem5 w
-     in case r `eqWord#` int2Word# 0# of
+     in case r `eqWord#` 0## of
           0# -> count
           1# -> pow5_factor q (count +# 1#)
 
@@ -226,21 +226,21 @@ f2dGT (I32# e2) (W32# u) (W32# v) (W32# w) =
         vv = mulPow5InvDivPow2 v q i
         vw = mulPow5InvDivPow2 w q i
         lastRemovedDigit =
-            case (q `neWord#` int2Word# 0#) `andI#` ((quot10 (vw `minusWord#` int2Word# 1#)) `leWord#` quot10 vu) of
+            case (q `neWord#` 0##) `andI#` ((quot10 (vw `minusWord#` 1##)) `leWord#` quot10 vu) of
                -- We need to know one removed digit even if we are not going to loop
                -- below. We could use q = X - 1 above, except that would require 33
                -- bits for the result, and we've found that 32-bit arithmetic is
                -- faster even on 64-bit machines.
                1# -> let l = unbox float_pow5_inv_bitcount +# pow5bitsUnboxed (word2Int# q -# 1#) -# 1#
-                      in rem10 (mulPow5InvDivPow2 v (q `minusWord#` int2Word# 1#) (negateInt# e2 +# word2Int# q -# 1# +# l))
-               0# -> int2Word# 0#
+                      in rem10 (mulPow5InvDivPow2 v (q `minusWord#` 1##) (negateInt# e2 +# word2Int# q -# 1# +# l))
+               0# -> 0##
         (# vvIsTrailingZeros, vuIsTrailingZeros, vw' #) =
             case () of
-              _ | boxToBool ((q `leWord#` int2Word# 9#) `andI#` (rem5 v `eqWord#` int2Word# 0#))
+              _ | boxToBool ((q `leWord#` 9##) `andI#` (rem5 v `eqWord#` 0##))
                     -> (# multipleOfPowerOf5_32UnboxedB v q, False, vw #)
-                | boxToBool ((q `leWord#` int2Word# 9#) `andI#` acceptBoundsUnboxed v)
+                | boxToBool ((q `leWord#` 9##) `andI#` acceptBoundsUnboxed v)
                     -> (# False, multipleOfPowerOf5_32UnboxedB u q, vw #)
-                | boxToBool (q `leWord#` int2Word# 9#)
+                | boxToBool (q `leWord#` 9##)
                     -> (# False, False, vw `minusWord#` int2Word# (multipleOfPowerOf5_32Unboxed w q) #)
                 | otherwise
                     -> (# False, False, vw #)
@@ -257,18 +257,18 @@ f2dLT (I32# e2) (W32# u) (W32# v) (W32# w) =
         vv = mulPow5DivPow2 v i j
         vw = mulPow5DivPow2 w i j
         lastRemovedDigit =
-            case (q `neWord#` int2Word# 0#) `andI#` ((quot10 (vw `minusWord#` int2Word# 1#)) `leWord#` quot10 vu) of
+            case (q `neWord#` 0##) `andI#` ((quot10 (vw `minusWord#` 1##)) `leWord#` quot10 vu) of
               1# -> let j = word2Int# q -# 1# -# (pow5bitsUnboxed (i +# 1#) -# unbox float_pow5_bitcount)
                      in rem10 (mulPow5DivPow2 v (i +# 1#) j)
-              0# -> int2Word# 0#
+              0# -> 0##
         (# vvIsTrailingZeros, vuIsTrailingZeros, vw' #) =
             case () of
-              _ | boxToBool ((q `leWord#` int2Word# 1#) `andI#` acceptBoundsUnboxed v)
-                    -> (# True, boxToBool ((w `minusWord#` v) `eqWord#` int2Word# 2#), vw #) -- mmShift == 1
-                | boxToBool (q `leWord#` int2Word# 1#)
-                    -> (# True, False, vw `minusWord#` int2Word# 1# #)
-                | boxToBool (q `ltWord#` int2Word# 31#)
-                    -> (# boxToBool (multipleOfPowerOf2Unboxed v (q `minusWord#` int2Word# 1#)), False, vw #)
+              _ | boxToBool ((q `leWord#` 1##) `andI#` acceptBoundsUnboxed v)
+                    -> (# True, boxToBool ((w `minusWord#` v) `eqWord#` 2##), vw #) -- mmShift == 1
+                | boxToBool (q `leWord#` 1##)
+                    -> (# True, False, vw `minusWord#` 1## #)
+                | boxToBool (q `ltWord#` 31##)
+                    -> (# boxToBool (multipleOfPowerOf2Unboxed v (q `minusWord#` 1##)), False, vw #)
                 | otherwise
                     -> (# False, False, vw #)
      in (BoundsState (W32# vu) (W32# vv) (W32# vw') (W32# lastRemovedDigit) vuIsTrailingZeros vvIsTrailingZeros, (I32# e10))
