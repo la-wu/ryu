@@ -246,19 +246,19 @@ writeMantissa ptr olength i mantissa
   | mantissa >= 100 = do
       let (m', c) = quotRem100 mantissa
       copy (digit_table `unsafeAt` fromIntegral c) (ptr `plusPtr` (olength - i - 1))
-      writeMantissa ptr olength (i + 2) m'
-  | mantissa >= 10 = do
-      let bs = digit_table `unsafeAt` fromIntegral mantissa
-      poke (ptr `plusPtr` 2) (first bs)
-      poke (ptr `plusPtr` 1) (BS.c2w '.')
-      poke ptr (second bs)
-      return (ptr `plusPtr` (olength + 1))
-  | otherwise = do
-      poke ptr (toAscii mantissa)
-      -- returning a truncated length if olength == 1 means we can always poke
-      -- the ptr here. might be faster to wait for the branch
-      poke (ptr `plusPtr` 1) (BS.c2w '.')
-      return $ ptr `plusPtr` if olength > 1 then (olength + 1) else 1
+      finalize ptr olength (i + 2) m'
+  | otherwise = finalize ptr olength i mantissa
+  where
+      finalize ptr olength i mantissa
+        | mantissa >= 10 = do
+            let bs = digit_table `unsafeAt` fromIntegral mantissa
+            poke (ptr `plusPtr` 2) (first bs)
+            poke (ptr `plusPtr` 1) (BS.c2w '.')
+            poke ptr (second bs)
+            return (ptr `plusPtr` (olength + 1))
+        | otherwise = do
+            copy ((fromIntegral (BS.c2w '.') .<< 8) .|. toAscii mantissa) ptr
+            return $ ptr `plusPtr` if olength > 1 then (olength + 1) else 1
 
 writeExponent :: Ptr Word8 -> Int32 -> IO (Ptr Word8)
 writeExponent ptr exponent
