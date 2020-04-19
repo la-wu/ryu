@@ -12,6 +12,9 @@ ieeeParts2Double :: Bool -> Int32 -> Word64 -> Double
 ieeeParts2Double sign exponent mantissa =
     coerceToFloat $ (asWord sign .<< 63) .|. (fromIntegral exponent .<< 52) .|. mantissa
 
+log10pow5 i = box (log10pow5Unboxed (unbox i))
+log10pow2 i = box (log10pow2Unboxed (unbox i))
+
 main :: IO ()
 main = hspec $ do
     describe "common" $ do
@@ -26,20 +29,20 @@ main = hspec $ do
             decimalLength9 999999999 `shouldBe` 9
 
         it "log10pow2" $ do
-            log10pow2 0 `shouldBe` (0 :: Word32)
-            log10pow2 1 `shouldBe` (0 :: Word32)
-            log10pow2 2 `shouldBe` (0 :: Word32)
-            log10pow2 3 `shouldBe` (0 :: Word32)
-            log10pow2 4 `shouldBe` (1 :: Word32)
-            log10pow2 1650 `shouldBe` (496 :: Word32)
+            log10pow2 0 `shouldBe` 0
+            log10pow2 1 `shouldBe` 0
+            log10pow2 2 `shouldBe` 0
+            log10pow2 3 `shouldBe` 0
+            log10pow2 4 `shouldBe` 1
+            log10pow2 1650 `shouldBe` 496
 
         it "log10pow5" $ do
-            log10pow5 0 `shouldBe` (0 :: Word32)
-            log10pow5 1 `shouldBe` (0 :: Word32)
-            log10pow5 2 `shouldBe` (1 :: Word32)
-            log10pow5 3 `shouldBe` (2 :: Word32)
-            log10pow5 4 `shouldBe` (2 :: Word32)
-            log10pow5 2620 `shouldBe` (1831 :: Word32)
+            log10pow5 0 `shouldBe` 0
+            log10pow5 1 `shouldBe` 0
+            log10pow5 2 `shouldBe` 1
+            log10pow5 3 `shouldBe` 2
+            log10pow5 4 `shouldBe` 2
+            log10pow5 2620 `shouldBe` 1831
 
     describe "f2sScientific" $ do
         it "basic" $ do

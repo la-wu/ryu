@@ -1,23 +1,46 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE Strict, StrictData #-}
+{-# LANGUAGE MagicHash, UnboxedTuples #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Data.Floating.Ryu.D2S
-    ( d2s
-    , d2s'
-    , d2Intermediate
-    , FloatingDecimal(..)
-    ) where
+    where
+    -- ( d2s
+    -- , d2sScientific
+    -- , d2sScientific'
+    -- , d2s'
+    -- , d2Intermediate
+    -- , FloatingDecimal(..)
+    -- ) where
 
 import Debug.Trace
-import Data.Array
-import Data.Array.Base (unsafeAt)
+import Data.Array.Unboxed
+import Data.Array.Base
+    ( UArray(..)
+    , STUArray(..)
+    , unsafeAt
+    , unsafeRead
+    , unsafeWrite
+    , numElements
+    , unsafeArray
+    , unsafeArrayUArray
+    , getNumElements
+    , unsafeNewArray_
+    , unsafeNewArraySTUArray_
+    )
+import Data.Array.ST
 import Data.Bits.Floating
 import Data.Bits
 import Data.Floating.Ryu.Common
-import Data.Int (Int32, Int64)
 import Data.Maybe (fromMaybe)
 import Data.WideWord.Word128
-import Control.Lens
-import GHC.Word (Word32, Word64)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BS
+import Control.Lens hiding ((...))
+import GHC.Int (Int32(..), Int64(..), Int(..))
+import GHC.Word (Word32(..), Word64(..))
+import GHC.Prim
+import GHC.ST (ST(..), runST)
 
 double_mantissa_bits :: Word64
 double_mantissa_bits = 52
@@ -31,8 +54,46 @@ double_bias = 1023
 double_pow5_bitcount = 125
 double_pow5_inv_bitcount = 125
 
--- TODO: UArray. Something about the constuctor is hidden
-double_pow5_inv_split :: Array Word64 Word128
+instance MArray (STUArray s) Word128 (ST s) where
+    {-# INLINE getBounds #-}
+    getBounds (STUArray l u _ _) = return (l,u)
+
+    {-# INLINE getNumElements #-}
+    getNumElements (STUArray _ _ n _) = return n
+
+    {-# INLINE unsafeNewArray_ #-}
+    unsafeNewArray_ (l,u) = unsafeNewArraySTUArray_ (l,u) (*# 16#)
+
+    {-# INLINE unsafeRead #-}
+    unsafeRead (STUArray _ _ _ marr) (I# i) = ST $ \s1 ->
+        let (# s2, w1 #) = readWord64Array# marr (i *# 2#) s1
+            (# s3, w2 #) = readWord64Array# marr (i *# 2# +# 1#) s2
+         in (# s2, Word128 (W64# w1) (W64# w2) #)
+
+    {-# INLINE unsafeWrite #-}
+    unsafeWrite (STUArray _ _ _ marr) (I# i) (Word128 (W64# w1) (W64# w2)) = ST $ \s1 ->
+        let s2 = writeWord64Array# marr (i *# 2#) w1 s1
+            s3 = writeWord64Array# marr (i *# 2# +# 1#) w2 s2
+         in (# s3, () #)
+
+instance IArray UArray Word128 where
+    {-# INLINE bounds #-}
+    bounds (UArray l u _ _) = (l,u)
+
+    {-# INLINE numElements #-}
+    numElements (UArray _ _ n _) = n
+
+    {-# INLINE unsafeArray #-}
+    unsafeArray lu ies = runST (unsafeArrayUArray lu ies 0)
+
+    -- NB: don't actually use this anywhere but...
+    {-# INLINE unsafeAt #-}
+    unsafeAt (UArray _ _ _ arr) (I# i)
+      = let w1 = indexWord64Array# arr (i *# 2#)
+            w2 = indexWord64Array# arr (i *# 2# +# 1#)
+         in Word128 (W64# w1) (W64# w2)
+
+double_pow5_inv_split :: UArray Word64 Word128
 double_pow5_inv_split = listArray (0, 341)
     [ Word128  2305843009213693952                    1, Word128  1844674407370955161 11068046444225730970
     , Word128  1475739525896764129  5165088340638674453, Word128  1180591620717411303  7821419487252849886
@@ -207,7 +268,7 @@ double_pow5_inv_split = listArray (0, 341)
     , Word128  1681492134412670958 14677010862395735754, Word128  1345193707530136767   673562245690857633
     ]
 
-double_pow5_split :: Array Word64 Word128
+double_pow5_split :: UArray Word64 Word128
 double_pow5_split = listArray (0, 325)
     [ Word128  1152921504606846976                    0, Word128  1441151880758558720                    0
     , Word128  1801439850948198400                    0, Word128  2251799813685248000                    0
@@ -407,24 +468,42 @@ d2dSmallInt m e =
             | otherwise -> Just $ FloatingDecimal (m2 .>> (toU $ -e2)) 0
 
 unifySmallTrailing :: FloatingDecimal -> FloatingDecimal
-unifySmallTrailing fd@(FloatingDecimal m e)
-  | m `rem` 10 /= 0 = fd
-  | otherwise = unifySmallTrailing $ FloatingDecimal (m `quot` 10) (e + 1)
+unifySmallTrailing fd@(FloatingDecimal (W64# m) e)
+  = let (# q, r #) = dquotRem10 m
+     in case r `neWord#` 0## of
+          1# -> fd
+          0# -> unifySmallTrailing $ FloatingDecimal (W64# q) (e + 1)
 
 -- TODO: 128-bit intrinsics
-mulShift64 :: Word64 -> Word128 -> Int32 -> Word64
-mulShift64 m f@(Word128 factorHi factorLo) shift =
-    let m' = fromIntegral m :: Word128
-        bits0 = m' * fromIntegral factorLo :: Word128
-        bits1 = m' * fromIntegral factorHi :: Word128
-        sum = bits0 .>> 64 + bits1
-     in fromIntegral $ sum .>> (fromIntegral $ shift - 64)
+mulShift64Unboxed :: Word# -> (# Word#, Word# #) -> Int# -> Word#
+mulShift64Unboxed m (# factorHi, factorLo #) shift =
+    let (# b0Hi, b0Lo #) = m `timesWord2#` factorLo
+        (# b1Hi, b1Lo #) = m `timesWord2#` factorHi
+        sum = b0Hi `plusWord#` b1Lo
+        high = b1Hi `plusWord#` (int2Word# (sum `ltWord#` b0Hi))
+        dist = shift -# 64#
+     in (high `uncheckedShiftL#` (64# -# dist)) `or#` (sum`uncheckedShiftRL#` dist)
 
-mulPow5InvDivPow2 :: Word64 -> Word64 -> Int32 -> Word64
-mulPow5InvDivPow2 m q j = mulShift64 m (double_pow5_inv_split `unsafeAt` fromIntegral q) j
+mulShift64Unboxed' :: Word64 -> Word128 -> Int32 -> Word64
+mulShift64Unboxed' (W64# m) (Word128 (W64# fHi) (W64# fLo)) (I32# shift) =
+    W64# (mulShift64Unboxed m (# fHi, fLo #) shift)
 
-mulPow5DivPow2 :: Word64 -> Word64 -> Int32 -> Word64
-mulPow5DivPow2 m i j = mulShift64 m (double_pow5_split `unsafeAt` fromIntegral i) j
+get_double_pow5_inv_split :: Int# -> (# Word#, Word# #)
+get_double_pow5_inv_split i =
+    let (UArray _ _ _ arr) = double_pow5_inv_split
+     in (# indexWord64Array# arr (i *# 2#), indexWord64Array# arr (i *# 2# +# 1#) #)
+
+get_double_pow5_split :: Int# -> (# Word#, Word# #)
+get_double_pow5_split i =
+    let (UArray _ _ _ arr) = double_pow5_split
+     in (# indexWord64Array# arr (i *# 2#), indexWord64Array# arr (i *# 2# +# 1#) #)
+
+mulPow5DivPow2 :: Word# -> Int# -> Int# -> Word#
+mulPow5DivPow2 m i j = mulShift64Unboxed m (get_double_pow5_split i) j
+
+mulPow5InvDivPow2 :: Word# -> Word# -> Int# -> Word#
+mulPow5InvDivPow2 m q j = mulShift64Unboxed m (get_double_pow5_inv_split (word2Int# q)) j
+
 
 acceptBounds :: Word64 -> Bool
 acceptBounds v = v `quot` 4 .&. 1 == 0
@@ -477,59 +556,79 @@ trimTrailing d
                        else id
      in (forceDown d'', r + r')
 
-trimNoTrailing' :: BoundsState -> (BoundsState, Int32)
-trimNoTrailing' d
-  | differ d = fmap ((+) 1) . trimNoTrailing' $ d & removeDigit
-  | otherwise = (d, 0)
 
-trimNoTrailing :: BoundsState -> (BoundsState, Int32)
-trimNoTrailing d =
+trimNoTrailing'' :: Word# -> Word# -> Word# -> Word# -> Int# -> (# Word#, Word#, Word#, Int# #)
+trimNoTrailing'' vu vv vw lastRemovedDigit count =
+    case vw' `gtWord#` vu' of
+      1# -> let (# vv', ld #) = dquotRem10 vv
+             in trimNoTrailing' vu' vv' vw' ld (count +# 1#)
+      0# -> (# vu, vv, lastRemovedDigit, count #)
+    where
+        vu' = dquot10 vu
+        vw' = dquot10 vw
+
+trimNoTrailing' :: Word# -> Word# -> Word# -> Word# -> Int# -> (# Word#, Word#, Word#, Int# #)
+trimNoTrailing' vu vv vw lastRemovedDigit count =
     -- Loop iterations below (approximately), without div 100 optimization:
     -- 0: 0.03%, 1: 13.8%, 2: 70.6%, 3: 14.0%, 4: 1.40%, 5: 0.14%, 6+: 0.02%
     -- Loop iterations below (approximately), with div 100 optimization:
     -- 0: 70.6%, 1: 27.8%, 2: 1.40%, 3: 0.14%, 4+: 0.02%
-    if d ^. vw `quot` 100 > d ^. vu `quot` 100
-       then fmap ((+) 2) . trimNoTrailing' $
-           d & vu %~ flip quot 100
-             & vv %~ flip quot 100
-             & vw %~ flip quot 100
-             & lastRemovedDigit .~ ((d ^. vv `rem` 100) `quot` 10)
-       else trimNoTrailing' d
+    let vw' = dquot100 vw
+        vu' = dquot100 vu
+     in case vw' `gtWord#` vu' of
+           1# -> let vv' = dquot100 vv
+                     ld = dquot10 (vv `minusWord#` (vv' `timesWord#` 100##))
+                  in trimNoTrailing'' vu' vv' vw' ld (count +# 2#)
+           0# -> trimNoTrailing'' vu vv vw lastRemovedDigit count
+
+trimNoTrailing :: BoundsState -> (BoundsState, Int32)
+trimNoTrailing (BoundsState (W64# vu) (W64# vv) (W64# vw) (W64# ld) _ _) =
+    let (# vu', vv', ld', c' #) = trimNoTrailing' vu vv vw ld 0#
+     in (BoundsState (W64# vu') (W64# vv') 0 (W64# ld') False False, I32# c')
 
 d2dGT :: Int32 -> Word64 -> Word64 -> Word64 -> (BoundsState, Int32)
-d2dGT e2 u v w =
-    let q = toU $ max (log10pow2 (fromIntegral e2) - 1) 0
-        e10 = fromIntegral $ q :: Int32
-        k = double_pow5_inv_bitcount + pow5bits (toS q) - 1
-        i = -e2 + fromIntegral (toS q + k) :: Int32
+d2dGT (I32# e2) (W64# u) (W64# v) (W64# w) =
+    let q = int2Word# (log10pow2Unboxed e2 -# (e2 ># 3#))
+        e10 = word2Int# q
+        k = unbox double_pow5_inv_bitcount +# pow5bitsUnboxed (word2Int# q) -# 1#
+        i = (negateInt# e2) +# word2Int# q +# k
         vu = mulPow5InvDivPow2 u q i
         vv = mulPow5InvDivPow2 v q i
         vw = mulPow5InvDivPow2 w q i
-        (vvIsTrailingZeros, vuIsTrailingZeros, vw') =
+        (# vvIsTrailingZeros, vuIsTrailingZeros, vw' #) =
             case () of
-              _ | q <= 21 && v `rem` 5 == 0 -> (multipleOfPowerOf5_64 v q, False, vw)
-                | q <= 21 && acceptBounds v -> (False, multipleOfPowerOf5_64 u q, vw)
-                | q <= 21                   -> (False, False, vw - asWord (multipleOfPowerOf5_64 w q))
-                | otherwise                 -> (False, False, vw)
-     in (BoundsState vu vv vw' 0 vuIsTrailingZeros vvIsTrailingZeros, e10)
+              _ | boxToBool ((q `leWord#` 21##) `andI#` (frem5 v `eqWord#` 0##))
+                    -> (# multipleOfPowerOf5_UnboxedB v q, False, vw #)
+                | boxToBool ((q `leWord#` 21##) `andI#` acceptBoundsUnboxed v)
+                    -> (# False, multipleOfPowerOf5_UnboxedB u q, vw #)
+                | boxToBool (q `leWord#` 21##)
+                    -> (# False, False, vw `minusWord#` int2Word# (multipleOfPowerOf5_Unboxed w q) #)
+                | otherwise
+                    -> (# False, False, vw #)
+     in (BoundsState (W64# vu) (W64# vv) (W64# vw') 0 vuIsTrailingZeros vvIsTrailingZeros, (I32# e10))
 
 d2dLT :: Int32 -> Word64 -> Word64 -> Word64 -> (BoundsState, Int32)
-d2dLT e2 u v w =
-    let q = toU $ max (log10pow5 (fromIntegral $ -e2) - 1) 0
-        e10 = fromIntegral q + e2 :: Int32
-        i = -e2 - fromIntegral q
-        k = pow5bits i - double_pow5_bitcount
-        j = fromIntegral q - k
-        vu = mulPow5DivPow2 u (fromIntegral i) j
-        vv = mulPow5DivPow2 v (fromIntegral i) j
-        vw = mulPow5DivPow2 w (fromIntegral i) j
-        (vvIsTrailingZeros, vuIsTrailingZeros, vw') =
+d2dLT (I32# e2) (W64# u) (W64# v) (W64# w) =
+    let nege2 = negateInt# e2
+        q = int2Word# (log10pow5Unboxed nege2 -# (nege2 ># 1#))
+        e10 = word2Int# q +# e2
+        i = nege2 -# word2Int# q
+        k = pow5bitsUnboxed i -# unbox double_pow5_bitcount
+        j = word2Int# q -# k
+        vu = mulPow5DivPow2 u i j
+        vv = mulPow5DivPow2 v i j
+        vw = mulPow5DivPow2 w i j
+        (# vvIsTrailingZeros, vuIsTrailingZeros, vw' #) =
             case () of
-              _ | q <= 1 && acceptBounds v -> (True, w - v == 2, vw) -- mmShift == 1
-                | q <= 1                   -> (True, False, vw - 1)
-                | q < 63                   -> (multipleOfPowerOf2 v (q - 1), False, vw)
-                | otherwise                -> (False, False, vw)
-     in (BoundsState vu vv vw' 0 vuIsTrailingZeros vvIsTrailingZeros, e10)
+              _ | boxToBool ((q `leWord#` 1##) `andI#` acceptBoundsUnboxed v)
+                    -> (# True, boxToBool ((w `minusWord#` v) `eqWord#` 2##), vw #) -- mmShift == 1
+                | boxToBool (q `leWord#` 1##)
+                    -> (# True, False, vw `minusWord#` 1## #)
+                | boxToBool (q `ltWord#` 63##)
+                    -> (# boxToBool (multipleOfPowerOf2Unboxed v (q `minusWord#` 1##)), False, vw #)
+                | otherwise
+                    -> (# False, False, vw #)
+     in (BoundsState (W64# vu) (W64# vv) (W64# vw') 0 vuIsTrailingZeros vvIsTrailingZeros, (I32# e10))
 
 roundUp :: Bool -> BoundsState -> Bool
 roundUp b s = (s ^. vv == s ^. vu && b) || s ^. lastRemovedDigit >= 5
@@ -580,15 +679,21 @@ d2Intermediate d = let (sign, mantissa, exponent) = breakdown d
                           else let v = unifySmallTrailing <$> d2dSmallInt mantissa (fromIntegral exponent)
                                 in fromMaybe (d2d mantissa (fromIntegral exponent)) v
 
-d2s' :: (Bool -> Word64 -> Int32 -> a) -> (String -> a) -> Double -> a
-d2s' formatter back d =
+d2s' :: (Bool -> Word64 -> Int32 -> a) -> (Bool -> Bool -> Bool -> a) -> Double -> a
+d2s' formatter special d =
     let (sign, mantissa, exponent) = breakdown d
      in if (exponent == mask double_exponent_bits) || (exponent == 0 && mantissa == 0)
-           then back $ special sign (exponent > 0) (mantissa > 0)
+           then special sign (exponent > 0) (mantissa > 0)
            else let v = unifySmallTrailing <$> d2dSmallInt mantissa (fromIntegral exponent)
                     FloatingDecimal m e = fromMaybe (d2d mantissa (fromIntegral exponent)) v
                  in formatter sign m e
 
+d2sScientific' :: Double -> BS.ByteString
+d2sScientific' = d2s' toCharsScientific (BS.packChars ... special)
+
+d2sScientific :: Double -> String
+d2sScientific = BS.unpackChars . d2sScientific'
+
 d2s :: Double -> String
-d2s = d2s' toChars id
+d2s = d2sScientific
 

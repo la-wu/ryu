@@ -14,13 +14,13 @@ module Data.Floating.Ryu.Common
     , specialFixed
     , decimalLength9
     , decimalLength17
-    , pow5bits
-    , log10pow2
-    , log10pow5
-    , pow5_32
-    , multipleOfPowerOf5_32
-    , multipleOfPowerOf5_64
-    , multipleOfPowerOf2
+    , pow5bitsUnboxed
+    , log10pow2Unboxed
+    , log10pow5Unboxed
+    , multipleOfPowerOf5_Unboxed
+    , multipleOfPowerOf5_UnboxedB
+    , multipleOfPowerOf2Unboxed
+    , acceptBoundsUnboxed
     , writeSign
     , appendNDigits
     , append9Digits
@@ -28,24 +28,36 @@ module Data.Floating.Ryu.Common
     , toCharsBuffered
     , toCharsFixed
     , toChars
-    , quot10
-    , rem10
-    , quotRem10
-    , quot5
-    , rem5
-    , quotRem5
+    -- hand-rolled division and remainder for f2s and d2s
+    , fquot10
+    , frem10
+    , fquotRem10
+    , fquot5
+    , frem5
+    , fquotRem5
+    , dquot10
+    , drem10
+    , dquotRem10
+    , dquot5
+    , drem5
+    , dquotRem5
+    , dquot100
+    -- prim-op helpers
+    , boxToBool
+    , box
+    , unbox
     ) where
 
 import Data.Array.Unboxed
 import Data.Array.Base (unsafeAt)
 import Data.Bits
 import Data.Char (chr, ord)
-import Data.Int (Int32)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Builder.Extra as BBE
 import qualified Data.ByteString.Lazy.Char8 as BL
+import GHC.Int (Int(..), Int32)
 import GHC.Word (Word8, Word16, Word32(..), Word64(..))
 import GHC.Prim
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
@@ -131,64 +143,102 @@ specialFixed    False   False   _      =    "0"
 specialFixed    True    True    _      =    "-Infinity"
 specialFixed    False   True    _      =    "Infinity"
 
-
 -- Returns e == 0 ? 1 : ceil(log_2(5^e)); requires 0 <= e <= 3528.
-{-# INLINABLE pow5bits #-}
-{-# SPECIALIZE pow5bits :: Int32 -> Int32 #-}
-pow5bits :: (Bits a, Integral a) => a -> a
-pow5bits e = (e * 1217359) .>> 19 + 1
+pow5bitsUnboxed :: Int# -> Int#
+pow5bitsUnboxed e = (e *# 1217359#) `uncheckedIShiftRL#` 19# +# 1#
 
 -- Returns floor(log_10(2^e)); requires 0 <= e <= 1650.
-{-# INLINABLE log10pow2 #-}
-{-# SPECIALIZE log10pow2 :: Int32 -> Int32 #-}
-log10pow2 :: (Bits a, Integral a) => a -> a
-log10pow2 e = (e * 78913) .>> 18
+log10pow2Unboxed :: Int# -> Int#
+log10pow2Unboxed e = (e *# 78913#) `uncheckedIShiftRL#` 18#
 
 -- Returns floor(log_10(5^e)); requires 0 <= e <= 2620.
-{-# INLINABLE log10pow5 #-}
-{-# SPECIALIZE log10pow5 :: Int32 -> Int32 #-}
-log10pow5 :: (Bits a, Integral a) => a -> a
-log10pow5 e = (e * 732928) .>> 20
+log10pow5Unboxed :: Int# -> Int#
+log10pow5Unboxed e = (e *# 732928#) `uncheckedIShiftRL#` 20#
 
-quot10 :: Word# -> Word#
-quot10 w = (w `timesWord#` 3435973837##) `uncheckedShiftRL#` 35#
+acceptBoundsUnboxed :: Word# -> Int#
+acceptBoundsUnboxed v = ((v `uncheckedShiftRL#` 2#) `and#` 1##) `eqWord#` 0##
 
-rem10 :: Word# -> Word#
-rem10 w = let w' = quot10 w
+fquot10 :: Word# -> Word#
+fquot10 w = (w `timesWord#` 0xCCCCCCCD##) `uncheckedShiftRL#` 35#
+
+frem10 :: Word# -> Word#
+frem10 w = let w' = fquot10 w
            in w `minusWord#` (w' `timesWord#` 10##)
 
-quotRem10 :: Word# -> (# Word#, Word# #)
-quotRem10 w = let w' = quot10 w
+fquotRem10 :: Word# -> (# Word#, Word# #)
+fquotRem10 w = let w' = fquot10 w
                in (# w', w `minusWord#` (w' `timesWord#` 10##) #)
 
-quot5 :: Word# -> Word#
-quot5 w = (w `timesWord#` 3435973837##) `uncheckedShiftRL#` 34#
+fquot5 :: Word# -> Word#
+fquot5 w = (w `timesWord#` 0xCCCCCCCD##) `uncheckedShiftRL#` 34#
 
-rem5 :: Word# -> Word#
-rem5 w = let w' = quot5 w
+frem5 :: Word# -> Word#
+frem5 w = let w' = fquot5 w
           in w `minusWord#` (w' `timesWord#` 5##)
 
-quotRem5 :: Word# -> (# Word#, Word# #)
-quotRem5 w = let w' = quot5 w
+fquotRem5 :: Word# -> (# Word#, Word# #)
+fquotRem5 w = let w' = fquot5 w
+              in (# w', w `minusWord#` (w' `timesWord#` 5##) #)
+
+dquot10 :: Word# -> Word#
+dquot10 w
+  = let (# rdx, rax #) = w `timesWord2#` 0xCCCCCCCCCCCCCCCD##
+     in rdx `uncheckedShiftRL#` 3#
+
+dquot100 :: Word# -> Word#
+dquot100 w
+  = let (# rdx, rax #) = (w `uncheckedShiftRL#` 2#) `timesWord2#` 0x28F5C28F5C28F5C3##
+     in rdx `uncheckedShiftRL#` 2#
+
+drem10 :: Word# -> Word#
+drem10 w = let w' = dquot10 w
+           in w `minusWord#` (w' `timesWord#` 10##)
+
+dquotRem10 :: Word# -> (# Word#, Word# #)
+dquotRem10 w = let w' = dquot10 w
+               in (# w', w `minusWord#` (w' `timesWord#` 10##) #)
+
+dquot5 :: Word# -> Word#
+dquot5 w = let (# rdx, rax #) = w `timesWord2#` 0xCCCCCCCCCCCCCCCD##
+             in rdx `uncheckedShiftRL#` 2#
+
+drem5 :: Word# -> Word#
+drem5 w = let w' = dquot5 w
+          in w `minusWord#` (w' `timesWord#` 5##)
+
+dquotRem5 :: Word# -> (# Word#, Word# #)
+dquotRem5 w = let w' = dquot5 w
               in (# w', w `minusWord#` (w' `timesWord#` 5##) #)
 
 quotRem10Boxed :: Word32 -> (Word32, Word32)
-quotRem10Boxed (W32# w) = let (# q, r #) = quotRem10 w in (W32# q, W32# r)
+quotRem10Boxed (W32# w) = let (# q, r #) = fquotRem10 w in (W32# q, W32# r)
 
-pow5_32 :: UArray Int Word32
-pow5_32 = listArray (0, 9) [5 ^ x | x <- [0..9]]
+boxToBool :: Int# -> Bool
+boxToBool i = case i of
+                1# -> True
+                0# -> False
 
-pow5_64 :: UArray Int Word64
-pow5_64 = listArray (0, 21) [5 ^ x | x <- [0..21]]
+box :: Int# -> Int
+box i = I# i
 
-multipleOfPowerOf5_32 :: Word32 -> Word32 -> Bool
-multipleOfPowerOf5_32 value p = value `mod` (pow5_32 `unsafeAt` fromIntegral p) == 0
+unbox :: Int -> Int#
+unbox (I# i) = i
 
-multipleOfPowerOf5_64 :: Word64 -> Word64 -> Bool
-multipleOfPowerOf5_64 value p = value `mod` (pow5_64 `unsafeAt` fromIntegral p) == 0
+pow5_factor :: Word# -> Int# -> Int#
+pow5_factor w count
+  = let (# q, r #) = fquotRem5 w
+     in case r `eqWord#` 0## of
+          0# -> count
+          1# -> pow5_factor q (count +# 1#)
 
-multipleOfPowerOf2 :: (Bits a, Integral a) => a -> a -> Bool
-multipleOfPowerOf2 value p = value .&. mask p == 0
+multipleOfPowerOf5_Unboxed :: Word# -> Word# -> Int#
+multipleOfPowerOf5_Unboxed value p = pow5_factor value 0# >=# word2Int# p
+
+multipleOfPowerOf5_UnboxedB :: Word# -> Word# -> Bool
+multipleOfPowerOf5_UnboxedB value p = boxToBool (multipleOfPowerOf5_Unboxed value p)
+
+multipleOfPowerOf2Unboxed :: Word# -> Word# -> Int#
+multipleOfPowerOf2Unboxed value p = (value `and#` ((1## `uncheckedShiftL#` word2Int# p) `minusWord#` 1##)) `eqWord#` 0##
 
 class (IArray UArray a, FiniteBits a, Integral a) => Mantissa a where
     decimalLength :: a -> Int
@@ -202,18 +252,23 @@ instance Mantissa Word32 where
     max_representable_pow10 = const 10
     max_shifted_mantissa = listArray (0, 10) [ (2^24 - 1) `quot` 5^x | x <- [0..10] ]
     quotRem100 (W32# w)
-      = let w' = (w `timesWord#` 1374389535##) `uncheckedShiftRL#` 37#
+      = let w' = (w `timesWord#` 0x51EB851F##) `uncheckedShiftRL#` 37#
          in (W32# w', W32# (w `minusWord#` (w' `timesWord#` 100##)))
     quotRem10000 (W32# w)
-      = let w' = (w `timesWord#` 3518437209##) `uncheckedShiftRL#` 45#
+      = let w' = (w `timesWord#` 0xD1B71759##) `uncheckedShiftRL#` 45#
          in (W32# w', W32# (w `minusWord#` (w' `timesWord#` 10000##)))
 
 instance Mantissa Word64 where
     decimalLength = decimalLength17
     max_representable_pow10 = const 22
     max_shifted_mantissa = listArray (0, 22) [ (2^53- 1) `quot` 5^x | x <- [0..22] ]
-    quotRem100 w = w `quotRem` 100
-    quotRem10000 w = w `quotRem` 10000
+    quotRem100 (W64# w)
+      = let w' = dquot100 w
+         in (W64# w', W64# (w `minusWord#` (w' `timesWord#` 100##)))
+    quotRem10000 (W64# w)
+      = let (# rdx, rax #) = w `timesWord2#` 0x346DC5D63886594B##
+            w' = rdx `uncheckedShiftRL#` 11#
+         in (W64# w', W64# (w `minusWord#` (w' `timesWord#` 10000##)))
 
 type DigitStore = Word16
 
