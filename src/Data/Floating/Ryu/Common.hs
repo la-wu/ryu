@@ -233,32 +233,33 @@ second :: DigitStore -> Word8
 second = fromIntegral
 
 -- for loop recursively...
-{-# SPECIALIZE writeMantissa :: Ptr Word8 -> Int -> Int -> Word32 -> IO (Ptr Word8) #-}
-{-# SPECIALIZE writeMantissa :: Ptr Word8 -> Int -> Int -> Word64 -> IO (Ptr Word8) #-}
-writeMantissa :: (Mantissa a) => Ptr Word8 -> Int -> Int -> a -> IO (Ptr Word8)
-writeMantissa ptr olength i mantissa
-  | mantissa >= 10000 = do
-      let (m', c) = quotRem10000 mantissa
-          (c1, c0) = quotRem100 c
-      copy (digit_table `unsafeAt` fromIntegral c0) (ptr `plusPtr` (olength - i - 1))
-      copy (digit_table `unsafeAt` fromIntegral c1) (ptr `plusPtr` (olength - i - 3))
-      writeMantissa ptr olength (i + 4) m'
-  | mantissa >= 100 = do
-      let (m', c) = quotRem100 mantissa
-      copy (digit_table `unsafeAt` fromIntegral c) (ptr `plusPtr` (olength - i - 1))
-      finalize ptr olength (i + 2) m'
-  | otherwise = finalize ptr olength i mantissa
-  where
-      finalize ptr olength i mantissa
-        | mantissa >= 10 = do
-            let bs = digit_table `unsafeAt` fromIntegral mantissa
-            poke (ptr `plusPtr` 2) (first bs)
-            poke (ptr `plusPtr` 1) (BS.c2w '.')
-            poke ptr (second bs)
-            return (ptr `plusPtr` (olength + 1))
-        | otherwise = do
-            copy ((fromIntegral (BS.c2w '.') .<< 8) .|. toAscii mantissa) ptr
-            return $ ptr `plusPtr` if olength > 1 then (olength + 1) else 1
+{-# SPECIALIZE writeMantissa :: Ptr Word8 -> Int -> Word32 -> IO (Ptr Word8) #-}
+{-# SPECIALIZE writeMantissa :: Ptr Word8 -> Int -> Word64 -> IO (Ptr Word8) #-}
+writeMantissa :: (Mantissa a) => Ptr Word8 -> Int -> a -> IO (Ptr Word8)
+writeMantissa ptr olength = go (ptr `plusPtr` olength)
+    where
+        go p mantissa
+          | mantissa >= 10000 = do
+              let (m', c) = quotRem10000 mantissa
+                  (c1, c0) = quotRem100 c
+              copy (digit_table `unsafeAt` fromIntegral c0) (p `plusPtr` (-1))
+              copy (digit_table `unsafeAt` fromIntegral c1) (p `plusPtr` (-3))
+              go (p `plusPtr` (-4)) m'
+          | mantissa >= 100 = do
+              let (m', c) = quotRem100 mantissa
+              copy (digit_table `unsafeAt` fromIntegral c) (p `plusPtr` (-1))
+              finalize m'
+          | otherwise = finalize mantissa
+        finalize mantissa
+          | mantissa >= 10 = do
+              let bs = digit_table `unsafeAt` fromIntegral mantissa
+              poke (ptr `plusPtr` 2) (first bs)
+              poke (ptr `plusPtr` 1) (BS.c2w '.')
+              poke ptr (second bs)
+              return (ptr `plusPtr` (olength + 1))
+          | otherwise = do
+              copy ((fromIntegral (BS.c2w '.') .<< 8) .|. toAscii mantissa) ptr
+              return $ ptr `plusPtr` if olength > 1 then (olength + 1) else 1
 
 writeExponent :: Ptr Word8 -> Int32 -> IO (Ptr Word8)
 writeExponent ptr exponent
@@ -295,14 +296,12 @@ toCharsBuffered :: (Mantissa a) => ForeignPtr Word8 -> Bool -> a -> Int32 -> IO 
 toCharsBuffered fp sign mantissa exponent =
     withForeignPtr fp $ \p0 -> do
         let olength = decimalLength mantissa
+            exp = exponent + fromIntegral olength - 1
         p1 <- writeSign p0 sign
-        p2 <- writeMantissa p1 olength 0 mantissa
+        p2 <- writeMantissa p1 olength mantissa
         poke p2 (BS.c2w 'E')
-        let exp = exponent + fromIntegral olength - 1
-            pe = p2 `plusPtr` 1
-        end <- if exp < 0
-                  then poke pe (BS.c2w '-') >> writeExponent (pe `plusPtr` 1) (-exp)
-                  else writeExponent pe exp
+        p3 <- writeSign (p2 `plusPtr` 1) (exp < 0)
+        end <- writeExponent p3 (abs exp)
         return $ BS.PS fp 0 (end `minusPtr` p0)
 
 
