@@ -2,7 +2,7 @@ import Control.DeepSeq
 import Criterion.Main
 import Data.Bits.Floating (coerceToFloat)
 import qualified Data.ByteString.Internal as BS
-import Data.Floating.Ryu
+import Data.Floating.Ryu.D2S
 import Data.Floating.Ryu.F2S
 import Data.Floating.Ryu.Common
 import Foreign.ForeignPtr (ForeignPtr)
@@ -12,14 +12,26 @@ import Numeric
 
 -- TODO: better generation
 floats :: Int -> Float -> Float -> IO [Float]
-floats n l u = fmap ( force
-                    . fmap ((+) l)
-                    . fmap ((*) (u - l))
-                    . fmap ((flip (/) 0xFFFFFFFF) . fromIntegral))
-             $ sequence [randomIO :: IO Word32 | _ <- [1..n]]
+floats n l u
+  = fmap ( force
+         . fmap ((+) l)
+         . fmap ((*) (u - l))
+         . fmap ((flip (/) 0xFFFFFFFF) . fromIntegral))
+  $ sequence [randomIO :: IO Word32 | _ <- [1..n]]
+
+doubles :: Int -> Double -> Double -> IO [Double]
+doubles n l u
+  = fmap ( force
+         . fmap ((+) l)
+         . fmap ((*) (u - l))
+         . fmap ((flip (/) 0xFFFFFFFFFFFFFFFF) . fromIntegral))
+  $ sequence [randomIO :: IO Word64 | _ <- [1..n]]
 
 instance NFData Data.Floating.Ryu.F2S.FloatingDecimal where
     rnf (Data.Floating.Ryu.F2S.FloatingDecimal mantissa exponent) = rnf mantissa `seq` rnf exponent
+
+instance NFData Data.Floating.Ryu.D2S.FloatingDecimal where
+    rnf (Data.Floating.Ryu.D2S.FloatingDecimal mantissa exponent) = rnf mantissa `seq` rnf exponent
 
 main :: IO ()
 main = do
@@ -27,6 +39,10 @@ main = do
     small <- floats 30 (1e-15) (1e-12)
     large <- floats 30 (1e12) (1e15)
     xlarge <- floats 30 (1e30) (1e35)
+    dtenths <- doubles 30 0.1 1
+    dsmall <- doubles 30 (1e-15) (1e-12)
+    dlarge <- doubles 30 (1e12) (1e15)
+    dxlarge <- doubles 30 (1e30) (1e35)
     fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
     let suite' strength mapper =
             [ bench "tenths" $ strength mapper tenths
@@ -35,6 +51,13 @@ main = do
             , bench "xlarge" $ strength mapper xlarge
             ]
         suite strength mapper = suite' strength (fmap mapper)
+        dsuite' strength mapper =
+            [ bench "tenths" $ strength mapper dtenths
+            , bench "small" $ strength mapper dsmall
+            , bench "large" $ strength mapper dlarge
+            , bench "xlarge" $ strength mapper dxlarge
+            ]
+        dsuite strength mapper = dsuite' strength (fmap mapper)
     defaultMain
         [ bgroup "baseline" [ bench "id" $ nf (fmap id) tenths ]
         , bgroup "f2Intermediate" $ suite nf f2Intermediate
@@ -52,6 +75,9 @@ main = do
         , bgroup "f2s E BS" $ suite nf f2sScientific'
         , bgroup "f2s F BS" $ suite nf f2sFixed'
         , bgroup "f2s G BS" $ suite nf f2sGeneral
+        , bgroup "d2Intermediate" $ dsuite nf d2Intermediate
+        , bgroup "d2s E BS" $ dsuite nf d2sScientific'
         , bgroup "showEFloat" $ suite nf (flip (showEFloat Nothing) [])
+        , bgroup "showEDouble" $ dsuite nf (flip (showEFloat Nothing) [])
         , bgroup "showFFloat" $ suite nf (flip (showFFloat Nothing) [])
         ]
