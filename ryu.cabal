@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 879c7210e5c7e3fcf239109e31db91a37d642db7a20f97b625fa864dc7f2a9c5
+-- hash: 799c14faea1e0c15cd8ab131e2cb9cb510c7a6ccdde5ebd1df589f4a1701d2e6
 
 name:           ryu
 version:        0.1.0.0
@@ -41,7 +41,6 @@ library
     , bytestring
     , floating-bits
     , ghc-prim
-    , lens
     , wide-word
   default-language: Haskell2010
 
@@ -58,7 +57,6 @@ executable ryu-exe
     , bytestring
     , floating-bits
     , ghc-prim
-    , lens
     , ryu
     , wide-word
   default-language: Haskell2010
@@ -79,7 +77,6 @@ test-suite ryu-test
     , floating-bits
     , ghc-prim
     , hspec
-    , lens
     , ryu
     , wide-word
   default-language: Haskell2010
@@ -100,7 +97,6 @@ benchmark ryu-bench
     , deepseq
     , floating-bits
     , ghc-prim
-    , lens
     , random
     , ryu
     , wide-word

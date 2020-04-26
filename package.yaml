@@ -24,7 +24,6 @@ dependencies:
 - array
 - bytestring
 - floating-bits
-- lens
 - wide-word
 - ghc-prim
 

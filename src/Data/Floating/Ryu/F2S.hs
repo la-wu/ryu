@@ -27,7 +27,6 @@ import Data.Char (ord)
 import Data.Floating.Ryu.Common
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BS
-import Control.Lens hiding ((...))
 import Control.Monad (foldM)
 import Control.Monad.ST
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
@@ -118,52 +117,49 @@ acceptBounds :: Word32 -> Bool
 acceptBounds v = v `quot` 4 .&. 1 == 0
 
 data BoundsState = BoundsState
-    { _vu :: Word32
-    , _vv :: Word32
-    , _vw :: Word32
-    , _lastRemovedDigit :: Word32
-    , _vuIsTrailingZeros :: Bool
-    , _vvIsTrailingZeros :: Bool
+    { vu :: Word32
+    , vv :: Word32
+    , vw :: Word32
+    , lastRemovedDigit :: Word32
+    , vuIsTrailingZeros :: Bool
+    , vvIsTrailingZeros :: Bool
     }
-
-makeLenses ''BoundsState
-
-differ :: BoundsState -> Bool
-differ d = d ^. vw `quot` 10 > d ^. vu `quot` 10
-
-removeDigit :: BoundsState -> BoundsState
-removeDigit = (vu %~ flip quot 10)
-            . (vv %~ flip quot 10)
-            . (vw %~ flip quot 10)
-            . (\d -> d & lastRemovedDigit .~ (d ^. vv `rem` 10))
 
 trimTrailing' :: BoundsState -> (BoundsState, Int32)
 trimTrailing' d
-  | differ d =
+  | vw d `quot` 10 > vu d `quot` 10 =
       fmap ((+) 1) . trimTrailing' $
-          d & removeDigit
-            & vuIsTrailingZeros .~ (d ^. vu `rem` 10 == 0)
-            & vvIsTrailingZeros .~ (d ^. lastRemovedDigit == 0)
+          d { vu = vu d `quot` 10
+            , vv = vv d `quot` 10
+            , vw = vw d `quot` 10
+            , lastRemovedDigit = vv d `rem` 10
+            , vuIsTrailingZeros = vu d `rem` 10 == 0
+            , vvIsTrailingZeros = lastRemovedDigit d == 0
+            }
   | otherwise = (d, 0)
 
 trimTrailing'' :: BoundsState -> (BoundsState, Int32)
 trimTrailing'' d
-  | d ^. vu `rem` 10 == 0 =
+  | vu d `rem` 10 == 0 =
       fmap ((+) 1) . trimTrailing'' $
-          d & removeDigit
-            & vvIsTrailingZeros .~ (d ^. lastRemovedDigit == 0)
+          d { vu = vu d `quot` 10
+            , vv = vv d `quot` 10
+            , vw = vw d `quot` 10
+            , lastRemovedDigit = vv d `rem` 10
+            , vvIsTrailingZeros = lastRemovedDigit d == 0
+            }
   | otherwise = (d, 0)
 
 trimTrailing :: BoundsState -> (BoundsState, Int32)
 trimTrailing d
   = let (d', r) = trimTrailing' d
-        (d'', r') = if d' ^. vuIsTrailingZeros
+        (d'', r') = if vuIsTrailingZeros d'
                        then trimTrailing'' d'
                        else (d', 0)
-        forceDown = if d'' ^. vvIsTrailingZeros && d'' ^. lastRemovedDigit == 5 && d'' ^. vv `rem` 2 == 0
-                       then lastRemovedDigit .~ 4
-                       else id
-     in (forceDown d'', r + r')
+        res = if vvIsTrailingZeros d'' && lastRemovedDigit d'' == 5 && vv d'' `rem` 2 == 0
+                 then d'' { lastRemovedDigit = 4 }
+                 else d''
+     in (res, r + r')
 
 trimNoTrailing' :: Word# -> Word# -> Word# -> Word# -> Int# -> (# Word#, Word#, Word#, Int# #)
 trimNoTrailing' vu vv vw lastRemovedDigit count =
@@ -238,10 +234,10 @@ f2dLT (I32# e2) (W32# u) (W32# v) (W32# w) =
      in (BoundsState (W32# vu) (W32# vv) (W32# vw') (W32# lastRemovedDigit) vuIsTrailingZeros vvIsTrailingZeros, (I32# e10))
 
 roundUp :: Bool -> BoundsState -> Bool
-roundUp b s = (s ^. vv == s ^. vu && b) || s ^. lastRemovedDigit >= 5
+roundUp b s = (vv s == vu s && b) || lastRemovedDigit s >= 5
 
 calculate :: Bool -> BoundsState -> Word32
-calculate b s = s ^. vv + asWord (roundUp b s)
+calculate b s = vv s + asWord (roundUp b s)
 
 f2d :: Word32 -> Word32 -> FloatingDecimal
 f2d m e =
@@ -264,9 +260,9 @@ f2d m e =
         -- Step 4: Find the shortest decimal representation in the interval of
         -- valid representations.
         (output, removed) =
-            if _vvIsTrailingZeros state || _vuIsTrailingZeros state
+            if vvIsTrailingZeros state || vuIsTrailingZeros state
                then pmap (\s -> calculate (not (acceptBounds v)
-                                        || not (s ^. vuIsTrailingZeros)) s)
+                                        || not (vuIsTrailingZeros s)) s)
                                           $ trimTrailing state
                else pmap (calculate True) $ trimNoTrailing state
         exp = e10 + removed
