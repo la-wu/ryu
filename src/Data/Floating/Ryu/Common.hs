@@ -32,16 +32,20 @@ module Data.Floating.Ryu.Common
     , fquot10
     , frem10
     , fquotRem10
+    , fquotRem10Boxed
     , fquot5
     , frem5
     , fquotRem5
+    , fwrapped
     , dquot10
     , drem10
     , dquotRem10
+    , dquotRem10Boxed
     , dquot5
     , drem5
     , dquotRem5
     , dquot100
+    , dwrapped
     -- prim-op helpers
     , boxToBool
     , box
@@ -180,6 +184,12 @@ fquotRem5 :: Word# -> (# Word#, Word# #)
 fquotRem5 w = let w' = fquot5 w
               in (# w', w `minusWord#` (w' `timesWord#` 5##) #)
 
+fquotRem10Boxed :: Word32 -> (Word32, Word32)
+fquotRem10Boxed (W32# w) = let (# q, r #) = fquotRem10 w in (W32# q, W32# r)
+
+fwrapped :: (Word# -> Word#) -> Word32 -> Word32
+fwrapped f (W32# w) = W32# (f w)
+
 dquot10 :: Word# -> Word#
 dquot10 w
   = let (# rdx, rax #) = w `timesWord2#` 0xCCCCCCCCCCCCCCCD##
@@ -210,8 +220,11 @@ dquotRem5 :: Word# -> (# Word#, Word# #)
 dquotRem5 w = let w' = dquot5 w
               in (# w', w `minusWord#` (w' `timesWord#` 5##) #)
 
-quotRem10Boxed :: Word32 -> (Word32, Word32)
-quotRem10Boxed (W32# w) = let (# q, r #) = fquotRem10 w in (W32# q, W32# r)
+dquotRem10Boxed :: Word64 -> (Word64, Word64)
+dquotRem10Boxed (W64# w) = let (# q, r #) = dquotRem10 w in (W64# q, W64# r)
+
+dwrapped :: (Word# -> Word#) -> Word64 -> Word64
+dwrapped f (W64# w) = W64# (f w)
 
 boxToBool :: Int# -> Bool
 boxToBool i = case i of
@@ -319,7 +332,7 @@ writeMantissa ptr olength = go (ptr `plusPtr` olength)
 writeExponent :: Ptr Word8 -> Int32 -> IO (Ptr Word8)
 writeExponent ptr exponent
   | exponent >= 100 = do
-      let (e1, e0) = quotRem10Boxed (fromIntegral exponent)
+      let (e1, e0) = fquotRem10Boxed (fromIntegral exponent)
       copy (digit_table `unsafeAt` fromIntegral e1) ptr
       poke (ptr `plusPtr` 2) (toAscii e0 :: Word8)
       return $ ptr `plusPtr` 3

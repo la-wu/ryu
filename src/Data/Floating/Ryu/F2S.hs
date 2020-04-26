@@ -127,28 +127,36 @@ data BoundsState = BoundsState
 
 trimTrailing' :: BoundsState -> (BoundsState, Int32)
 trimTrailing' d
-  | vw d `quot` 10 > vu d `quot` 10 =
-      fmap ((+) 1) . trimTrailing' $
-          d { vu = vu d `quot` 10
-            , vv = vv d `quot` 10
-            , vw = vw d `quot` 10
-            , lastRemovedDigit = vv d `rem` 10
-            , vuIsTrailingZeros = vu d `rem` 10 == 0
-            , vvIsTrailingZeros = lastRemovedDigit d == 0
-            }
+  | vw' > vu' =
+      let (vv', vvRem) = fquotRem10Boxed $ vv d
+       in fmap ((+) 1) . trimTrailing' $
+           d { vu = vu'
+             , vv = vv'
+             , vw = vw'
+             , lastRemovedDigit = vvRem
+             , vuIsTrailingZeros = vuRem == 0
+             , vvIsTrailingZeros = lastRemovedDigit d == 0
+             }
   | otherwise = (d, 0)
+  where
+      (vu', vuRem) = fquotRem10Boxed $ vu d
+      vw' = fwrapped fquot10 (vw d)
 
 trimTrailing'' :: BoundsState -> (BoundsState, Int32)
 trimTrailing'' d
-  | vu d `rem` 10 == 0 =
-      fmap ((+) 1) . trimTrailing'' $
-          d { vu = vu d `quot` 10
-            , vv = vv d `quot` 10
-            , vw = vw d `quot` 10
-            , lastRemovedDigit = vv d `rem` 10
-            , vvIsTrailingZeros = lastRemovedDigit d == 0
-            }
+  | vuRem == 0 =
+      let (vv', vvRem) = fquotRem10Boxed $ vv d
+          vw' = fwrapped fquot10 (vw d)
+       in fmap ((+) 1) . trimTrailing'' $
+           d { vu = vu'
+             , vv = vv'
+             , vw = vw'
+             , lastRemovedDigit = vvRem
+             , vvIsTrailingZeros = lastRemovedDigit d == 0
+             }
   | otherwise = (d, 0)
+  where
+      (vu', vuRem) = fquotRem10Boxed $ vu d
 
 trimTrailing :: BoundsState -> (BoundsState, Int32)
 trimTrailing d
