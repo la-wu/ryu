@@ -1,4 +1,4 @@
-{-# LANGUAGE Strict, StrictData #-}
+{-# LANGUAGE Strict #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MagicHash, UnboxedTuples #-}
 

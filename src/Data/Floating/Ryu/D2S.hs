@@ -1,5 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE Strict, StrictData #-}
+{-# LANGUAGE Strict #-}
 {-# LANGUAGE MagicHash, UnboxedTuples #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 

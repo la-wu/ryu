@@ -1,7 +1,5 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE Strict, StrictData #-}
+{-# LANGUAGE Strict #-}
 {-# LANGUAGE MagicHash, UnboxedTuples #-}
-{-# LANGUAGE BangPatterns #-}
 
 module Data.Floating.Ryu.F2S
     ( f2s
