@@ -287,6 +287,7 @@ f2Intermediate f = let (sign, mantissa, exponent) = breakdown f
                           then FloatingDecimal mantissa (toS exponent)
                           else f2d mantissa exponent
 
+{-# INLINE f2s' #-}
 f2s' :: (Bool -> Word32 -> Int32 -> a) -> (Bool -> Bool -> Bool -> a) -> Float -> a
 f2s' formatter special f =
     let (sign, mantissa, exponent) = breakdown f
@@ -296,10 +297,10 @@ f2s' formatter special f =
                  in formatter sign m e
 
 f2sScientific' :: Float -> BS.ByteString
-f2sScientific' = f2s' toCharsScientific (BS.packChars ... special)
+f2sScientific' f = f2s' toCharsScientific (BS.packChars ... special) f
 
 f2sBuffered :: ForeignPtr Word8 -> Float -> IO BS.ByteString
-f2sBuffered fp = f2s' (toCharsBuffered fp) (return ... BS.packChars ... special)
+f2sBuffered fp f = f2s' (toCharsBuffered fp) (return ... BS.packChars ... special) f
 
 -- manual long division
 largeFloatToChars :: Bool -> Word32 -> Int32 -> BS.ByteString

@@ -681,6 +681,7 @@ d2Intermediate d = let (sign, mantissa, exponent) = breakdown d
                           else let v = unifySmallTrailing <$> d2dSmallInt mantissa (fromIntegral exponent)
                                 in fromMaybe (d2d mantissa (fromIntegral exponent)) v
 
+{-# INLINE d2s' #-}
 d2s' :: (Bool -> Word64 -> Int32 -> a) -> (Bool -> Bool -> Bool -> a) -> Double -> a
 d2s' formatter special d =
     let (sign, mantissa, exponent) = breakdown d
@@ -691,7 +692,7 @@ d2s' formatter special d =
                  in formatter sign m e
 
 d2sScientific' :: Double -> BS.ByteString
-d2sScientific' = d2s' toCharsScientific (BS.packChars ... special)
+d2sScientific' d = d2s' toCharsScientific (BS.packChars ... special) d
 
 d2sScientific :: Double -> String
 d2sScientific = BS.unpackChars . d2sScientific'
