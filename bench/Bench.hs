@@ -35,14 +35,15 @@ instance NFData Data.Floating.Ryu.D2S.FloatingDecimal where
 
 main :: IO ()
 main = do
-    tenths <- floats 30 0.1 1
-    small <- floats 30 (1e-15) (1e-12)
-    large <- floats 30 (1e12) (1e15)
-    xlarge <- floats 30 (1e30) (1e35)
-    dtenths <- doubles 30 0.1 1
-    dsmall <- doubles 30 (1e-15) (1e-12)
-    dlarge <- doubles 30 (1e12) (1e15)
-    dxlarge <- doubles 30 (1e30) (1e35)
+    let samples = 30
+    tenths <- floats samples 0.1 1
+    small <- floats samples (1e-15) (1e-12)
+    large <- floats samples (1e12) (1e15)
+    xlarge <- floats samples (1e30) (1e35)
+    dtenths <- doubles samples 0.1 1
+    dsmall <- doubles samples (1e-15) (1e-12)
+    dlarge <- doubles samples (1e12) (1e15)
+    dxlarge <- doubles samples (1e30) (1e35)
     fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
     let suite' strength mapper =
             [ bench "tenths" $ strength mapper tenths
@@ -62,14 +63,14 @@ main = do
         [ bgroup "baseline" [ bench "id" $ nf (fmap id) tenths ]
         , bgroup "f2Intermediate" $ suite nf f2Intermediate
         , bgroup "trailing" $
-            [ bench "0.1"         $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.1)
-            , bench "0.11"        $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.11)
-            , bench "0.111"       $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.111)
-            , bench "0.1111"      $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.1111)
-            , bench "0.11111"     $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.11111)
-            , bench "0.111111"    $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.111111)
-            , bench "0.1111111"   $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.1111111)
-            , bench "0.11111111"  $ nf (fmap f2Intermediate) (take 30 . repeat $ 0.11111111)
+            [ bench "0.1"         $ nf (fmap f2Intermediate) (replicate samples 0.1)
+            , bench "0.11"        $ nf (fmap f2Intermediate) (replicate samples 0.11)
+            , bench "0.111"       $ nf (fmap f2Intermediate) (replicate samples 0.111)
+            , bench "0.1111"      $ nf (fmap f2Intermediate) (replicate samples 0.1111)
+            , bench "0.11111"     $ nf (fmap f2Intermediate) (replicate samples 0.11111)
+            , bench "0.111111"    $ nf (fmap f2Intermediate) (replicate samples 0.111111)
+            , bench "0.1111111"   $ nf (fmap f2Intermediate) (replicate samples 0.1111111)
+            , bench "0.11111111"  $ nf (fmap f2Intermediate) (replicate samples 0.11111111)
             ]
         , bgroup "f2s E Buffered" $ suite' nfAppIO (sequence . fmap (f2sBuffered fp))
         , bgroup "f2s E BS" $ suite nf f2sScientific'
