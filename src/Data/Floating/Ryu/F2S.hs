@@ -24,6 +24,9 @@ import Data.Bits
 import Data.Char (ord)
 import Data.Floating.Ryu.Common
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Builder.Extra as BB
 import qualified Data.ByteString.Internal as BS
 import Control.Monad (foldM)
 import Control.Monad.ST
@@ -305,56 +308,9 @@ f2sBuffered fp f = f2s' (toCharsBuffered fp) (return ... BS.packChars ... specia
 -- manual long division
 largeFloatToChars :: Bool -> Word32 -> Int32 -> BS.ByteString
 largeFloatToChars sign mantissa exponent =
-    let (d, filled, fs) = loop
-        olength = if d >= 1000000000 then 10 else decimalLength9 d
-        totalLength = 1 + olength + 9 * filled
-     in unsafePerformIO $ do
-         fp <- BS.mallocByteString totalLength
-         withForeignPtr fp $ \p0 -> do
-             p1 <- writeSign p0 sign
-             p2 <- appendNDigits p1 d olength
-             p3 <- foldM append9Digits p2 (reverse . take filled . elems $ fs)
-             return $ BS.PS fp 0 (p3 `minusPtr` p0)
-    where
-        loop :: (Word32, Int, UArray Int Word32)
-        loop = runST $ do
-            let maxBits = 24 + exponent
-                maxIdx = fromIntegral (maxBits + 31) `quot` 32 - 1
-                shift = exponent `rem` 32
-            ds <- newArray (0, 3) 0 :: ST s (STUArray s Int Word32)
-            if shift <= 8
-               then do
-                   unsafeWrite ds maxIdx (mantissa .<< shift)
-               else do
-                   unsafeWrite ds (maxIdx - 1) (mantissa .<< shift)
-                   unsafeWrite ds maxIdx (mantissa .>> (32 - shift))
-            if maxIdx /= 0
-               then do
-                   fs <- newArray (0, 3) 0 :: ST s (STUArray s Int Word32)
-                   let longDivide 0 iters = return iters
-                       longDivide idx iters = do
-                           rem <- foldM (longDivide' ds) 0 (reverse [0..idx])
-                           unsafeWrite fs iters rem
-                           quot <- unsafeRead ds idx
-                           longDivide (idx - asWord (quot == 0)) (iters + 1)
-                   iters <- longDivide maxIdx 0
-                   d <- unsafeRead ds 0
-                   t <- freeze fs
-                   return (d, iters, t)
-               else do
-                   -- maxIdx == 0 -> exponent <= 8
-                   -- doesn't matter what the 'filled' array is populated with.
-                   -- just return someting
-                   t <- freeze ds
-                   return (mantissa .<< shift, 0, t)
-
-        longDivide' :: STUArray s Int Word32 -> Word32 -> Int -> ST s (Word32)
-        longDivide' ds rem idx = do
-            d <- unsafeRead ds idx
-            let full = (fromIntegral rem .<< 32 :: Word64) .|. fromIntegral d
-                qt = fromIntegral $ full `quot` 1000000000
-            unsafeWrite ds idx qt
-            return $ fromIntegral full - 1000000000 * qt
+    let toBS = BB.toLazyByteStringWith (BB.safeStrategy 128 BB.smallChunkSize) BL.empty
+        signB = if sign then BB.char7 '-' else mempty
+     in BL.toStrict . toBS $ signB <> BB.integerDec (toInteger mantissa .<< exponent)
 
 fixupLargeFixed :: Float -> Maybe BS.ByteString -> BS.ByteString
 fixupLargeFixed f bs =
