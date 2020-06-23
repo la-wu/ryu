@@ -68,7 +68,7 @@ import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import Foreign.Marshal.Utils (moveBytes)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr, castPtr)
 import Foreign.Storable (poke)
-import System.IO.Unsafe (unsafePerformIO)
+import System.IO.Unsafe (unsafeDupablePerformIO)
 
 {-# INLINABLE (.>>) #-}
 (.>>) :: (Bits a, Integral b) => a -> b -> a
@@ -353,7 +353,7 @@ writeSign ptr False = return ptr
 {-# SPECIALIZE toCharsScientific :: Bool -> Word32 -> Int32 -> BS.ByteString #-}
 {-# SPECIALIZE toCharsScientific :: Bool -> Word64 -> Int32 -> BS.ByteString #-}
 toCharsScientific :: (Mantissa a) => Bool -> a -> Int32 -> BS.ByteString
-toCharsScientific sign mantissa exponent = unsafePerformIO $ do
+toCharsScientific sign mantissa exponent = unsafeDupablePerformIO $ do
     fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
     toCharsBuffered fp sign mantissa exponent
 
@@ -470,7 +470,7 @@ append9Digits ptr w = do
 {-# SPECIALIZE toCharsFixed :: Bool -> Word32 -> Int32 -> Maybe BS.ByteString #-}
 {-# SPECIALIZE toCharsFixed :: Bool -> Word64 -> Int32 -> Maybe BS.ByteString #-}
 toCharsFixed :: (Show a, Mantissa a) => Bool -> a -> Int32 -> Maybe BS.ByteString
-toCharsFixed sign mantissa exponent = unsafePerformIO $ do
+toCharsFixed sign mantissa exponent = unsafeDupablePerformIO $ do
     fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
     let olength = decimalLength mantissa
         wholeDigits = fromIntegral olength + exponent
