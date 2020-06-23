@@ -26,6 +26,7 @@ dependencies:
 - floating-bits
 - wide-word
 - ghc-prim
+- template-haskell
 
 library:
   source-dirs: src
