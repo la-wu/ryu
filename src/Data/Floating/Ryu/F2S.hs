@@ -6,7 +6,6 @@ module Data.Floating.Ryu.F2S
     , f2sFixed
     , f2sScientific
     , f2sGeneral
-    , f2sBuffered
     , f2sScientific'
     , f2sFixed'
     , f2s'
@@ -25,8 +24,10 @@ import Data.Floating.Ryu.Common
 import Data.Floating.Ryu.F2STable
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BLC
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Builder.Extra as BB
+import qualified Data.ByteString.Builder.Prim as BP
 import qualified Data.ByteString.Internal as BS
 import Control.Monad (foldM)
 import Control.Monad.ST
@@ -267,36 +268,33 @@ f2s' formatter special f =
            else let FloatingDecimal m e = f2d mantissa exponent
                  in formatter sign m e
 
-f2sScientific' :: Float -> BS.ByteString
-f2sScientific' f = f2s' toCharsScientific (BS.packChars ... special) f
-
-f2sBuffered :: ForeignPtr Word8 -> Float -> IO BS.ByteString
-f2sBuffered fp f = f2s' (toCharsBuffered fp) (return ... BS.packChars ... special) f
+f2sScientific' :: Float -> BB.Builder
+f2sScientific' f = BP.primBounded (f2s' toCharsScientific special f) ()
 
 -- manual long division
-largeFloatToChars :: Bool -> Word32 -> Int32 -> BS.ByteString
+largeFloatToChars :: Bool -> Word32 -> Int32 -> BB.Builder
 largeFloatToChars sign mantissa exponent =
     let toBS = BB.toLazyByteStringWith (BB.safeStrategy 128 BB.smallChunkSize) BL.empty
         signB = if sign then BB.char7 '-' else mempty
-     in BL.toStrict . toBS $ signB <> BB.integerDec (toInteger mantissa .<< exponent)
+     in signB <> BB.integerDec (toInteger mantissa .<< exponent)
 
-fixupLargeFixed :: Float -> Maybe BS.ByteString -> BS.ByteString
+fixupLargeFixed :: Float -> Maybe (BP.BoundedPrim ()) -> BB.Builder
 fixupLargeFixed f bs =
     case bs of
-      Just res -> res
+      Just res -> BP.primBounded res ()
       Nothing ->
           let (sign, mantissa, exponent) = breakdown f
               m = (1 .<< float_mantissa_bits) .|. mantissa
               e = toS exponent - toS float_bias - toS float_mantissa_bits
            in largeFloatToChars sign m e
 
-f2sFixed' :: Float -> BS.ByteString
-f2sFixed' f = fixupLargeFixed f $ f2s' toCharsFixed (Just ... BS.packChars ... specialFixed) f
+f2sFixed' :: Float -> BB.Builder
+f2sFixed' f = fixupLargeFixed f $ f2s' toCharsFixed (Just ... specialFixed) f
 
-f2sGeneral :: Float -> BS.ByteString
-f2sGeneral f = fixupLargeFixed f $ f2s' dispatch (Just ... BS.packChars ... specialFixed) f
+f2sGeneral :: Float -> BB.Builder
+f2sGeneral f = fixupLargeFixed f $ f2s' dispatch (Just ... specialFixed) f
     where
-        dispatch :: Bool -> Word32 -> Int32 -> Maybe BS.ByteString
+        dispatch :: Bool -> Word32 -> Int32 -> Maybe (BP.BoundedPrim ())
         dispatch sign m e =
             let olength = decimalLength9 m
                 (lower, upper) =
@@ -314,11 +312,11 @@ f2sGeneral f = fixupLargeFixed f $ f2s' dispatch (Just ... BS.packChars ... spec
                    else Just $ toCharsScientific sign m e
 
 f2sScientific :: Float -> String
-f2sScientific = BS.unpackChars . f2sScientific'
+f2sScientific = BLC.unpack . BB.toLazyByteString . f2sScientific'
 
 f2sFixed :: Float -> String
-f2sFixed = BS.unpackChars . f2sFixed'
+f2sFixed = BLC.unpack . BB.toLazyByteString . f2sFixed'
 
 f2s :: Float -> String
-f2s = BS.unpackChars . f2sGeneral
+f2s = BLC.unpack . BB.toLazyByteString . f2sGeneral
 

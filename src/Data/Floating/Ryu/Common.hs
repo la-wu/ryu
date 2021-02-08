@@ -25,7 +25,6 @@ module Data.Floating.Ryu.Common
     , appendNDigits
     , append9Digits
     , toCharsScientific
-    , toCharsBuffered
     , toCharsFixed
     -- hand-rolled division and remainder for f2s and d2s
     , fquot10
@@ -51,6 +50,7 @@ module Data.Floating.Ryu.Common
     , unbox
     ) where
 
+import Control.Monad (foldM)
 import Data.Array.Unboxed
 import Data.Array.Base (unsafeAt)
 import Data.Bits
@@ -59,6 +59,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Builder.Extra as BBE
+import qualified Data.ByteString.Builder.Prim.Internal as BP
 import qualified Data.ByteString.Lazy.Char8 as BL
 import GHC.Int (Int(..), Int32)
 import GHC.Word (Word8, Word16, Word32(..), Word64(..))
@@ -130,21 +131,32 @@ infixr 9 ...
 (...) :: (a -> b) -> (c -> d -> e -> a) -> c -> d -> e -> b
 (...) = dot . (.)
 
+-- TODO calculate / prove?
+maxEncodedLength = 32
+
+-- TODO TH?
+pokeAll :: String -> Ptr Word8 -> IO (Ptr Word8)
+pokeAll s ptr = foldM pokeOne ptr s
+  where pokeOne ptr c = poke ptr (BS.c2w c) >> return (ptr `plusPtr` 1)
+
+boundString :: String -> BP.BoundedPrim ()
+boundString s = BP.boudedPrim maxEncodedLength $ const (pokeAll s)
+
 --         Sign -> Exp  -> Mantissa
-special :: Bool -> Bool -> Bool   ->   String
-special    _       _       True   =    "NaN"
-special    True    False   _      =    "-0E0"
-special    False   False   _      =    "0E0"
-special    True    True    _      =    "-Infinity"
-special    False   True    _      =    "Infinity"
+special :: Bool -> Bool -> Bool -> BP.BoundedPrim ()
+special    _       _       True =  boundString "NaN"
+special    True    False   _    =  boundString "-0E0"
+special    False   False   _    =  boundString "0E0"
+special    True    True    _    =  boundString "-Infinity"
+special    False   True    _    =  boundString "Infinity"
 
 -- same as above but for fixed-point / general conversion
-specialFixed :: Bool -> Bool -> Bool   ->   String
-specialFixed    _       _       True   =    "NaN"
-specialFixed    True    False   _      =    "-0"
-specialFixed    False   False   _      =    "0"
-specialFixed    True    True    _      =    "-Infinity"
-specialFixed    False   True    _      =    "Infinity"
+specialFixed :: Bool -> Bool -> Bool -> BP.BoundedPrim ()
+specialFixed    _       _       True =  boundString "NaN"
+specialFixed    True    False   _    =  boundString "-0"
+specialFixed    False   False   _    =  boundString "0"
+specialFixed    True    True    _    =  boundString "-Infinity"
+specialFixed    False   True    _    =  boundString "Infinity"
 
 -- Returns e == 0 ? 1 : ceil(log_2(5^e)); requires 0 <= e <= 3528.
 pow5bitsUnboxed :: Int# -> Int#
@@ -349,27 +361,17 @@ writeSign ptr True = do
 writeSign ptr False = return ptr
 
 {-# INLINABLE toCharsScientific #-}
-{-# SPECIALIZE toCharsScientific :: Bool -> Word32 -> Int32 -> BS.ByteString #-}
-{-# SPECIALIZE toCharsScientific :: Bool -> Word64 -> Int32 -> BS.ByteString #-}
-toCharsScientific :: (Mantissa a) => Bool -> a -> Int32 -> BS.ByteString
-toCharsScientific sign mantissa exponent = unsafeDupablePerformIO $ do
-    fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
-    toCharsBuffered fp sign mantissa exponent
-
-{-# INLINABLE toCharsBuffered #-}
-{-# SPECIALIZE toCharsBuffered :: ForeignPtr Word8 -> Bool -> Word32 -> Int32 -> IO BS.ByteString #-}
-{-# SPECIALIZE toCharsBuffered :: ForeignPtr Word8 -> Bool -> Word64 -> Int32 -> IO BS.ByteString #-}
-toCharsBuffered :: (Mantissa a) => ForeignPtr Word8 -> Bool -> a -> Int32 -> IO BS.ByteString
-toCharsBuffered fp sign mantissa exponent =
-    withForeignPtr fp $ \p0 -> do
-        let olength = decimalLength mantissa
-            exp = exponent + fromIntegral olength - 1
-        p1 <- writeSign p0 sign
-        p2 <- writeMantissa p1 olength mantissa
-        poke p2 (BS.c2w 'E')
-        p3 <- writeSign (p2 `plusPtr` 1) (exp < 0)
-        end <- writeExponent p3 (abs exp)
-        return $ BS.PS fp 0 (end `minusPtr` p0)
+{-# SPECIALIZE toCharsScientific :: Bool -> Word32 -> Int32 -> BP.BoundedPrim () #-}
+{-# SPECIALIZE toCharsScientific :: Bool -> Word64 -> Int32 -> BP.BoundedPrim () #-}
+toCharsScientific :: (Mantissa a) => Bool -> a -> Int32 -> BP.BoundedPrim ()
+toCharsScientific sign mantissa exponent = BP.boudedPrim maxEncodedLength $ \_ p0 -> do
+    let olength = decimalLength mantissa
+        exp = exponent + fromIntegral olength - 1
+    p1 <- writeSign p0 sign
+    p2 <- writeMantissa p1 olength mantissa
+    poke p2 (BS.c2w 'E')
+    p3 <- writeSign (p2 `plusPtr` 1) (exp < 0)
+    writeExponent p3 (abs exp)
 
 
 --
@@ -466,9 +468,9 @@ append9Digits ptr w = do
 -- higher precision method that is dependent on the original (float / double)
 -- input value and type
 {-# INLINABLE toCharsFixed #-}
-{-# SPECIALIZE toCharsFixed :: Bool -> Word32 -> Int32 -> Maybe BS.ByteString #-}
-{-# SPECIALIZE toCharsFixed :: Bool -> Word64 -> Int32 -> Maybe BS.ByteString #-}
-toCharsFixed :: (Show a, Mantissa a) => Bool -> a -> Int32 -> Maybe BS.ByteString
+{-# SPECIALIZE toCharsFixed :: Bool -> Word32 -> Int32 -> Maybe (BP.BoundedPrim ()) #-}
+{-# SPECIALIZE toCharsFixed :: Bool -> Word64 -> Int32 -> Maybe (BP.BoundedPrim ()) #-}
+toCharsFixed :: (Show a, Mantissa a) => Bool -> a -> Int32 -> Maybe (BP.BoundedPrim ())
 toCharsFixed sign mantissa exponent =
     if exponent >= 0
        then
@@ -482,38 +484,35 @@ toCharsFixed sign mantissa exponent =
     where
         olength = decimalLength mantissa
         wholeDigits = fromIntegral olength + exponent
-        totalLength = case () of
-                        _ | exponent >= 0   -> wholeDigits
-                          | wholeDigits > 0 -> fromIntegral olength + 1
-                          | otherwise       -> 2 - exponent
-        finalize fp = BS.PS fp 0 (fromIntegral totalLength + asWord sign)
 
-        wrap :: (ForeignPtr Word8 -> IO BS.ByteString) -> BS.ByteString
-        wrap f = unsafeDupablePerformIO $ do
-            fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
-            f fp
+        wrap :: (Ptr Word8 -> IO (Ptr Word8)) -> BP.BoundedPrim ()
+        wrap f = BP.boudedPrim maxEncodedLength $ const f
 
-        case1 fp = withForeignPtr fp $ \p0 -> do
+        case1 :: Ptr Word8 -> IO (Ptr Word8)
+        case1 p0 = do
             -- case 172900 .. 1729
+            let totalLength = wholeDigits
             p1 <- writeSign p0 sign
             let p2 = p1 `plusPtr` olength
             writeRightAligned p2 mantissa
             BS.memset p2 (BS.c2w '0') (fromIntegral exponent)
-            return $ finalize fp
+            return $ p0 `plusPtr` (fromIntegral totalLength + asWord sign)
 
-        case2 fp = withForeignPtr fp $ \p0 -> do
+        case2 p0 = do
             -- case 17.29
+            let totalLength = fromIntegral olength + 1
             p1 <- writeSign p0 sign
             writeRightAligned (p1 `plusPtr` fromIntegral totalLength) mantissa
             moveBytes p1 (p1 `plusPtr` 1) (fromIntegral wholeDigits)
             poke (p1 `plusPtr` fromIntegral wholeDigits) (BS.c2w '.')
-            return $ finalize fp
+            return $ p0 `plusPtr` (fromIntegral totalLength + asWord sign)
 
-        case3 fp = withForeignPtr fp $ \p0 -> do
+        case3 p0 = do
             -- case 0.001729
+            let totalLength = 2 - exponent
             p1 <- writeSign p0 sign
             writeRightAligned (p1 `plusPtr` fromIntegral totalLength) mantissa
             BS.memset p1 (BS.c2w '0') (fromIntegral (-wholeDigits) + 2)
             poke (p1 `plusPtr` 1) (BS.c2w '.')
-            return $ finalize fp
+            return $ p0 `plusPtr` (fromIntegral totalLength + asWord sign)
 

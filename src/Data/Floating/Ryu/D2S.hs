@@ -21,6 +21,9 @@ import Data.Floating.Ryu.D2STable
 import Data.Maybe (fromMaybe)
 import Data.WideWord.Word128
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy.Char8 as BLC
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Builder.Prim as BP
 import qualified Data.ByteString.Internal as BS
 import GHC.Int (Int32(..), Int64(..), Int(..))
 import GHC.Word (Word32(..), Word64(..))
@@ -293,11 +296,11 @@ d2s' formatter special d =
                     FloatingDecimal m e = fromMaybe (d2d mantissa (fromIntegral exponent)) v
                  in formatter sign m e
 
-d2sScientific' :: Double -> BS.ByteString
-d2sScientific' d = d2s' toCharsScientific (BS.packChars ... special) d
+d2sScientific' :: Double -> BB.Builder
+d2sScientific' d = BP.primBounded (d2s' toCharsScientific special d) ()
 
 d2sScientific :: Double -> String
-d2sScientific = BS.unpackChars . d2sScientific'
+d2sScientific = BLC.unpack . BB.toLazyByteString . d2sScientific'
 
 d2s :: Double -> String
 d2s = d2sScientific
