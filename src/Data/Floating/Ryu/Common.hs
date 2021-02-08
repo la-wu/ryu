@@ -27,7 +27,6 @@ module Data.Floating.Ryu.Common
     , toCharsScientific
     , toCharsBuffered
     , toCharsFixed
-    , toChars
     -- hand-rolled division and remainder for f2s and d2s
     , fquot10
     , frem10
@@ -470,44 +469,51 @@ append9Digits ptr w = do
 {-# SPECIALIZE toCharsFixed :: Bool -> Word32 -> Int32 -> Maybe BS.ByteString #-}
 {-# SPECIALIZE toCharsFixed :: Bool -> Word64 -> Int32 -> Maybe BS.ByteString #-}
 toCharsFixed :: (Show a, Mantissa a) => Bool -> a -> Int32 -> Maybe BS.ByteString
-toCharsFixed sign mantissa exponent = unsafeDupablePerformIO $ do
-    fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
-    let olength = decimalLength mantissa
+toCharsFixed sign mantissa exponent =
+    if exponent >= 0
+       then
+           if exponent > max_representable_pow10 mantissa || trimmedDigits mantissa exponent
+              then Nothing -- large integer
+              else Just $ wrap case1
+       else do
+           if wholeDigits > 0
+              then Just $ wrap case2
+              else Just $ wrap case3
+    where
+        olength = decimalLength mantissa
         wholeDigits = fromIntegral olength + exponent
         totalLength = case () of
                         _ | exponent >= 0   -> wholeDigits
                           | wholeDigits > 0 -> fromIntegral olength + 1
                           | otherwise       -> 2 - exponent
-        finalize = Just $ BS.PS fp 0 (fromIntegral totalLength + asWord sign)
-    withForeignPtr fp $ \p0 -> do
-        p1 <- writeSign p0 sign
-        if exponent >= 0
-           then
-               if exponent > max_representable_pow10 mantissa || trimmedDigits mantissa exponent
-                  then return Nothing -- large integer
-                  else do
-                      -- case 172900 .. 1729
-                      let p2 = p1 `plusPtr` olength
-                      writeRightAligned p2 mantissa
-                      BS.memset p2 (BS.c2w '0') (fromIntegral exponent)
-                      return finalize
-           else do
-               writeRightAligned (p1 `plusPtr` fromIntegral totalLength) mantissa
-               if wholeDigits > 0
-                  then do
-                      -- case 17.29
-                      moveBytes p1 (p1 `plusPtr` 1) (fromIntegral wholeDigits)
-                      poke (p1 `plusPtr` fromIntegral wholeDigits) (BS.c2w '.')
-                      return finalize
-                  else do
-                      -- case 0.001729
-                      BS.memset p1 (BS.c2w '0') (fromIntegral (-wholeDigits) + 2)
-                      poke (p1 `plusPtr` 1) (BS.c2w '.')
-                      return finalize
+        finalize fp = BS.PS fp 0 (fromIntegral totalLength + asWord sign)
 
-{-# INLINABLE toChars #-}
-{-# SPECIALIZE toChars :: Bool -> Word32 -> Int32 -> String #-}
-{-# SPECIALIZE toChars :: Bool -> Word64 -> Int32 -> String #-}
-toChars :: (Mantissa a) => Bool -> a -> Int32 -> String
-toChars s m = BS.unpackChars . toCharsScientific s m
+        wrap :: (ForeignPtr Word8 -> IO BS.ByteString) -> BS.ByteString
+        wrap f = unsafeDupablePerformIO $ do
+            fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
+            f fp
+
+        case1 fp = withForeignPtr fp $ \p0 -> do
+            -- case 172900 .. 1729
+            p1 <- writeSign p0 sign
+            let p2 = p1 `plusPtr` olength
+            writeRightAligned p2 mantissa
+            BS.memset p2 (BS.c2w '0') (fromIntegral exponent)
+            return $ finalize fp
+
+        case2 fp = withForeignPtr fp $ \p0 -> do
+            -- case 17.29
+            p1 <- writeSign p0 sign
+            writeRightAligned (p1 `plusPtr` fromIntegral totalLength) mantissa
+            moveBytes p1 (p1 `plusPtr` 1) (fromIntegral wholeDigits)
+            poke (p1 `plusPtr` fromIntegral wholeDigits) (BS.c2w '.')
+            return $ finalize fp
+
+        case3 fp = withForeignPtr fp $ \p0 -> do
+            -- case 0.001729
+            p1 <- writeSign p0 sign
+            writeRightAligned (p1 `plusPtr` fromIntegral totalLength) mantissa
+            BS.memset p1 (BS.c2w '0') (fromIntegral (-wholeDigits) + 2)
+            poke (p1 `plusPtr` 1) (BS.c2w '.')
+            return $ finalize fp
 
