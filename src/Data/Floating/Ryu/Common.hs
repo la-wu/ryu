@@ -336,9 +336,14 @@ writeMantissa ptr olength = go (ptr `plusPtr` olength)
               poke (ptr `plusPtr` 1) (BS.c2w '.')
               poke ptr (second bs)
               return (ptr `plusPtr` (olength + 1))
-          | otherwise = do
+          | olength > 1 = do
               copy ((fromIntegral (BS.c2w '.') .<< 8) .|. toAscii mantissa) ptr
-              return $ ptr `plusPtr` if olength > 1 then (olength + 1) else 1
+              return $ ptr `plusPtr` (olength + 1)
+          | otherwise = do
+              poke (ptr `plusPtr` 2) (BS.c2w '0')
+              poke (ptr `plusPtr` 1) (BS.c2w '.')
+              poke ptr (toAscii mantissa)
+              return (ptr `plusPtr` 3)
 
 writeExponent :: Ptr Word8 -> Int32 -> IO (Ptr Word8)
 writeExponent ptr exponent

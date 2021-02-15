@@ -69,8 +69,8 @@ main = hspec $ do
         it "basic" $ do
             f2sScientific 0.0    `shouldBe` "0e0"
             f2sScientific (-0.0) `shouldBe` "-0e0"
-            f2sScientific 1.0    `shouldBe` "1e0"
-            f2sScientific (-1.0) `shouldBe` "-1e0"
+            f2sScientific 1.0    `shouldBe` "1.0e0"
+            f2sScientific (-1.0) `shouldBe` "-1.0e0"
             f2sScientific (0/0)  `shouldBe` "NaN"
             f2sScientific (1/0)  `shouldBe` "Infinity"
             f2sScientific (-1/0) `shouldBe` "-Infinity"
@@ -80,11 +80,11 @@ main = hspec $ do
 
         it "min and max" $ do
             f2sScientific (coerceToFloat 0x7f7fffff) `shouldBe` "3.4028235e38"
-            f2sScientific (coerceToFloat 0x00000001) `shouldBe` "1e-45"
+            f2sScientific (coerceToFloat 0x00000001) `shouldBe` "1.0e-45"
 
         it "boundary round" $ do
             f2sScientific 3.355445e7   `shouldBe` "3.355445e7"
-            f2sScientific 8.999999e9   `shouldBe` "9e9"
+            f2sScientific 8.999999e9   `shouldBe` "9.0e9"
             f2sScientific 3.4366717e10 `shouldBe` "3.436672e10"
 
         it "exact value round" $ do
@@ -115,7 +115,7 @@ main = hspec $ do
             f2sScientific 7.0385309e-26  `shouldBe` "7.038531e-26"
             f2sScientific 9.2234038e17   `shouldBe` "9.223404e17"
             f2sScientific 6.7108872e7    `shouldBe` "6.710887e7"
-            f2sScientific 1.0e-44        `shouldBe` "1e-44"
+            f2sScientific 1.0e-44        `shouldBe` "1.0e-44"
             f2sScientific 2.816025e14    `shouldBe` "2.816025e14"
             f2sScientific 9.223372e18    `shouldBe` "9.223372e18"
             f2sScientific 1.5846085e29   `shouldBe` "1.5846086e29"
@@ -123,10 +123,10 @@ main = hspec $ do
             f2sScientific 5.368709e18    `shouldBe` "5.368709e18"
             f2sScientific 4.6143165e18   `shouldBe` "4.6143166e18"
             f2sScientific 0.007812537    `shouldBe` "7.812537e-3"
-            f2sScientific 1.4e-45        `shouldBe` "1e-45"
+            f2sScientific 1.4e-45        `shouldBe` "1.0e-45"
             f2sScientific 1.18697724e20  `shouldBe` "1.18697725e20"
             f2sScientific 1.00014165e-36 `shouldBe` "1.00014165e-36"
-            f2sScientific 200.0          `shouldBe` "2e2"
+            f2sScientific 200.0          `shouldBe` "2.0e2"
             f2sScientific 3.3554432e7    `shouldBe` "3.3554432e7"
 
         it "looks like power of 5" $ do
@@ -135,7 +135,7 @@ main = hspec $ do
             f2sScientific (coerceToFloat 0x5e1502F9) `shouldBe` "2.6843546e18"
 
         it "output length" $ do
-            f2sScientific 1.0            `shouldBe` "1e0"
+            f2sScientific 1.0            `shouldBe` "1.0e0"
             f2sScientific 1.2            `shouldBe` "1.2e0"
             f2sScientific 1.23           `shouldBe` "1.23e0"
             f2sScientific 1.234          `shouldBe` "1.234e0"
@@ -316,8 +316,8 @@ main = hspec $ do
         it "basic" $ do
             d2s 0.0    `shouldBe` "0e0"
             d2s (-0.0) `shouldBe` "-0e0"
-            d2s 1.0    `shouldBe` "1e0"
-            d2s (-1.0) `shouldBe` "-1e0"
+            d2s 1.0    `shouldBe` "1.0e0"
+            d2s (-1.0) `shouldBe` "-1.0e0"
             d2s (0/0)  `shouldBe` "NaN"
             d2s (1/0)  `shouldBe` "Infinity"
             d2s (-1/0) `shouldBe` "-Infinity"
@@ -327,7 +327,7 @@ main = hspec $ do
 
         it "min and max" $ do
             d2s (coerceToFloat 0x7fefffffffffffff) `shouldBe` "1.7976931348623157e308"
-            d2s (coerceToFloat 0x0000000000000001) `shouldBe` "5e-324"
+            d2s (coerceToFloat 0x0000000000000001) `shouldBe` "5.0e-324"
 
         it "lots of trailing zeros" $ do
             d2s 2.98023223876953125e-8 `shouldBe` "2.9802322387695313e-8"
@@ -348,7 +348,7 @@ main = hspec $ do
             d2s (coerceToFloat 0x4850F0CF064DD592) `shouldBe` "2.305843009213694e40"
 
         it "output length" $ do
-            d2s 1                  `shouldBe` "1e0"
+            d2s 1                  `shouldBe` "1.0e0"
             d2s 1.2                `shouldBe` "1.2e0"
             d2s 1.23               `shouldBe` "1.23e0"
             d2s 1.234              `shouldBe` "1.234e0"
@@ -421,7 +421,7 @@ main = hspec $ do
             d2s 9007199254740991.0 `shouldBe` "9.007199254740991e15"
             d2s 9007199254740992.0 `shouldBe` "9.007199254740992e15"
 
-            d2s 1.0e+0                `shouldBe` "1e0"
+            d2s 1.0e+0                `shouldBe` "1.0e0"
             d2s 1.2e+1                `shouldBe` "1.2e1"
             d2s 1.23e+2               `shouldBe` "1.23e2"
             d2s 1.234e+3              `shouldBe` "1.234e3"
@@ -440,22 +440,22 @@ main = hspec $ do
             d2s 1.234567890123456e+15 `shouldBe` "1.234567890123456e15"
 
             -- 10^i
-            d2s 1.0e+0  `shouldBe` "1e0"
-            d2s 1.0e+1  `shouldBe` "1e1"
-            d2s 1.0e+2  `shouldBe` "1e2"
-            d2s 1.0e+3  `shouldBe` "1e3"
-            d2s 1.0e+4  `shouldBe` "1e4"
-            d2s 1.0e+5  `shouldBe` "1e5"
-            d2s 1.0e+6  `shouldBe` "1e6"
-            d2s 1.0e+7  `shouldBe` "1e7"
-            d2s 1.0e+8  `shouldBe` "1e8"
-            d2s 1.0e+9  `shouldBe` "1e9"
-            d2s 1.0e+10 `shouldBe` "1e10"
-            d2s 1.0e+11 `shouldBe` "1e11"
-            d2s 1.0e+12 `shouldBe` "1e12"
-            d2s 1.0e+13 `shouldBe` "1e13"
-            d2s 1.0e+14 `shouldBe` "1e14"
-            d2s 1.0e+15 `shouldBe` "1e15"
+            d2s 1.0e+0  `shouldBe` "1.0e0"
+            d2s 1.0e+1  `shouldBe` "1.0e1"
+            d2s 1.0e+2  `shouldBe` "1.0e2"
+            d2s 1.0e+3  `shouldBe` "1.0e3"
+            d2s 1.0e+4  `shouldBe` "1.0e4"
+            d2s 1.0e+5  `shouldBe` "1.0e5"
+            d2s 1.0e+6  `shouldBe` "1.0e6"
+            d2s 1.0e+7  `shouldBe` "1.0e7"
+            d2s 1.0e+8  `shouldBe` "1.0e8"
+            d2s 1.0e+9  `shouldBe` "1.0e9"
+            d2s 1.0e+10 `shouldBe` "1.0e10"
+            d2s 1.0e+11 `shouldBe` "1.0e11"
+            d2s 1.0e+12 `shouldBe` "1.0e12"
+            d2s 1.0e+13 `shouldBe` "1.0e13"
+            d2s 1.0e+14 `shouldBe` "1.0e14"
+            d2s 1.0e+15 `shouldBe` "1.0e15"
 
             -- 10^15 + 10^i
             d2s (1.0e+15 + 1.0e+0)  `shouldBe` "1.000000000000001e15"
@@ -475,7 +475,7 @@ main = hspec $ do
             d2s (1.0e+15 + 1.0e+14) `shouldBe` "1.1e15"
 
             -- Largest power of 2 <= 10^(i+1)
-            d2s 8.0                `shouldBe` "8e0"
+            d2s 8.0                `shouldBe` "8.0e0"
             d2s 64.0               `shouldBe` "6.4e1"
             d2s 512.0              `shouldBe` "5.12e2"
             d2s 8192.0             `shouldBe` "8.192e3"
@@ -493,7 +493,7 @@ main = hspec $ do
             d2s 9007199254740992.0 `shouldBe` "9.007199254740992e15"
 
             -- 1000 * (Largest power of 2 <= 10^(i+1))
-            d2s 8.0e+3             `shouldBe` "8e3"
+            d2s 8.0e+3             `shouldBe` "8.0e3"
             d2s 64.0e+3            `shouldBe` "6.4e4"
             d2s 512.0e+3           `shouldBe` "5.12e5"
             d2s 8192.0e+3          `shouldBe` "8.192e6"
@@ -508,5 +508,25 @@ main = hspec $ do
             d2s 8796093022208.0e+3 `shouldBe` "8.796093022208e15"
 
     describe "realFloat" $ do
-        it "floatDec" $ check dec_list (formatFloat FFGeneric Nothing)
-        it "doubleDec" $ check dec_list (formatDouble FFGeneric Nothing)
+        it "powers of 10" $ do
+          let pows =
+                [ 1.0e-45 , 1.0e-44 , 1.0e-43 , 1.0e-42 , 1.0e-41 , 1.0e-40
+                , 1.0e-39 , 1.0e-38 , 1.0e-37 , 1.0e-36 , 1.0e-35 , 1.0e-34
+                , 1.0e-33 , 1.0e-32 , 1.0e-31 , 1.0e-30 , 1.0e-29 , 1.0e-28
+                , 1.0e-27 , 1.0e-26 , 1.0e-25 , 1.0e-24 , 1.0e-23 , 1.0e-22
+                , 1.0e-21 , 1.0e-20 , 1.0e-19 , 1.0e-18 , 1.0e-17 , 1.0e-16
+                , 1.0e-15 , 1.0e-14 , 1.0e-13 , 1.0e-12 , 1.0e-11 , 1.0e-10
+                , 1.0e-9  , 1.0e-8  , 1.0e-7  , 1.0e-6  , 1.0e-5  , 1.0e-4
+                , 1.0e-3  , 1.0e-2  , 1.0e-1  , 1.0e0   , 1.0e1   , 1.0e2
+                , 1.0e3   , 1.0e4   , 1.0e5   , 1.0e6   , 1.0e7   , 1.0e8
+                , 1.0e9   , 1.0e10  , 1.0e11  , 1.0e12  , 1.0e13  , 1.0e14
+                , 1.0e15  , 1.0e16  , 1.0e17  , 1.0e18  , 1.0e19  , 1.0e20
+                , 1.0e21  , 1.0e22  , 1.0e23  , 1.0e24  , 1.0e25  , 1.0e26
+                , 1.0e27  , 1.0e28  , 1.0e29  , 1.0e30  , 1.0e31  , 1.0e32
+                , 1.0e33  , 1.0e34  , 1.0e35  , 1.0e36  , 1.0e37  , 1.0e38
+                , 1.0e39
+                ]
+          fmap (BL.unpack . BB.toLazyByteString . floatDec) pows `shouldBe` fmap dec_list pows
+
+        it "floatDec" $ check dec_list floatDec
+        it "doubleDec" $ check dec_list doubleDec

@@ -1,5 +1,7 @@
 module Data.Floating.RealFloat
   ( FFFormat(..)
+  , floatDec
+  , doubleDec
   , formatFloat
   , formatDouble
   ) where
@@ -12,6 +14,14 @@ import qualified Data.ByteString.Builder.Prim as BP
 import GHC.Float (FFFormat(..), roundTo)
 import GHC.Word (Word64(..))
 import GHC.Show (intToDigit)
+
+{-# INLINABLE floatDec #-}
+floatDec :: Float -> BB.Builder
+floatDec = formatFloat FFGeneric Nothing
+
+{-# INLINABLE doubleDec #-}
+doubleDec :: Double -> BB.Builder
+doubleDec = formatDouble FFGeneric Nothing
 
 {-# INLINABLE formatFloat #-}
 formatFloat :: FFFormat -> Maybe Int -> Float -> BB.Builder
