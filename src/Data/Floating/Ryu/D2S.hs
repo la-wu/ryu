@@ -159,7 +159,8 @@ trimTrailing d
                        then trimTrailing'' d'
                        else (d', 0)
         res = if vvIsTrailingZeros d'' && lastRemovedDigit d'' == 5 && vv d'' `rem` 2 == 0
-                 then d'' { lastRemovedDigit = 4 }
+                 -- set `{ lastRemovedDigit = 4 }` to round-even
+                 then d''
                  else d''
      in (res, r + r')
 

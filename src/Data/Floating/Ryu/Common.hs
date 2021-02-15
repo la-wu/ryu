@@ -145,8 +145,8 @@ boundString s = BP.boudedPrim maxEncodedLength $ const (pokeAll s)
 --         Sign -> Exp  -> Mantissa
 special :: Bool -> Bool -> Bool -> BP.BoundedPrim ()
 special    _       _       True =  boundString "NaN"
-special    True    False   _    =  boundString "-0E0"
-special    False   False   _    =  boundString "0E0"
+special    True    False   _    =  boundString "-0e0"
+special    False   False   _    =  boundString "0e0"
 special    True    True    _    =  boundString "-Infinity"
 special    False   True    _    =  boundString "Infinity"
 
@@ -369,7 +369,7 @@ toCharsScientific sign mantissa exponent = BP.boudedPrim maxEncodedLength $ \_ p
         exp = exponent + fromIntegral olength - 1
     p1 <- writeSign p0 sign
     p2 <- writeMantissa p1 olength mantissa
-    poke p2 (BS.c2w 'E')
+    poke p2 (BS.c2w 'e')
     p3 <- writeSign (p2 `plusPtr` 1) (exp < 0)
     writeExponent p3 (abs exp)
 

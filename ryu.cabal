@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: f04233d4e303be1460145ba0900e26572ce1e4a1f145f65aebeff01d7d03e9b1
+-- hash: 461ea1dcb7b64ef10bca335d8c7a9dd7c896e329f2315852c952e9ac617cbb10
 
 name:           ryu
 version:        0.1.0.0
@@ -27,6 +27,7 @@ source-repository head
 
 library
   exposed-modules:
+      Data.Floating.RealFloat
       Data.Floating.Ryu
       Data.Floating.Ryu.Common
       Data.Floating.Ryu.D2S
