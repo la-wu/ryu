@@ -2,12 +2,17 @@ import Control.DeepSeq
 import Criterion.Main
 import Data.Bits.Floating (coerceToFloat)
 import qualified Data.ByteString.Internal as BS
+import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString.Builder as BB
 import Data.Floating.Ryu.D2S
 import Data.Floating.Ryu.F2S
 import Data.Floating.Ryu.Common
+import Data.Floating.RealFloat
+import Data.Functor.Identity
 import Foreign.ForeignPtr (ForeignPtr)
 import GHC.Word (Word8, Word32, Word64)
 import System.Random
+import System.IO.Unsafe (unsafePerformIO)
 import Numeric
 
 -- TODO: better generation
@@ -33,52 +38,38 @@ instance NFData Data.Floating.Ryu.F2S.FloatingDecimal where
 instance NFData Data.Floating.Ryu.D2S.FloatingDecimal where
     rnf (Data.Floating.Ryu.D2S.FloatingDecimal mantissa exponent) = rnf mantissa `seq` rnf exponent
 
+nRepl :: Int
+nRepl = 10000
+
+{-# NOINLINE intData #-}
+intData :: [Int]
+intData = [1..nRepl]
+
+{-# NOINLINE floatData #-}
+floatData :: [Float]
+floatData = map (\x -> (3.14159 * fromIntegral x) ^ (3 :: Int)) intData
+
+{-# NOINLINE doubleData #-}
+doubleData :: [Double]
+doubleData = map (\x -> (3.14159 * fromIntegral x) ^ (3 :: Int)) intData
+
+{-# INLINE benchB #-}
+benchB :: String -> a -> (a -> BB.Builder) -> Benchmark
+benchB name x b =
+    bench (name ++" (" ++ show nRepl ++ ")") $
+        whnf (BS.length . BB.toLazyByteString . b) x
+
 main :: IO ()
 main = do
-    let samples = 30
-    tenths <- floats samples 0.1 1
-    small <- floats samples (1e-15) (1e-12)
-    large <- floats samples (1e12) (1e15)
-    xlarge <- floats samples (1e30) (1e35)
-    dtenths <- doubles samples 0.1 1
-    dsmall <- doubles samples (1e-15) (1e-12)
-    dlarge <- doubles samples (1e12) (1e15)
-    dxlarge <- doubles samples (1e30) (1e35)
-    fp <- BS.mallocByteString 32 :: IO (ForeignPtr Word8)
-    let suite' strength mapper =
-            [ bench "tenths" $ strength mapper tenths
-            , bench "small" $ strength mapper small
-            , bench "large" $ strength mapper large
-            , bench "xlarge" $ strength mapper xlarge
-            ]
-        suite strength mapper = suite' strength (fmap mapper)
-        dsuite' strength mapper =
-            [ bench "tenths" $ strength mapper dtenths
-            , bench "small" $ strength mapper dsmall
-            , bench "large" $ strength mapper dlarge
-            , bench "xlarge" $ strength mapper dxlarge
-            ]
-        dsuite strength mapper = dsuite' strength (fmap mapper)
     defaultMain
-        [ bgroup "baseline" [ bench "id" $ nf (fmap id) tenths ]
-        , bgroup "f2Intermediate" $ suite nf f2Intermediate
-        , bgroup "trailing" $
-            [ bench "0.1"         $ nf (fmap f2Intermediate) (replicate samples 0.1)
-            , bench "0.11"        $ nf (fmap f2Intermediate) (replicate samples 0.11)
-            , bench "0.111"       $ nf (fmap f2Intermediate) (replicate samples 0.111)
-            , bench "0.1111"      $ nf (fmap f2Intermediate) (replicate samples 0.1111)
-            , bench "0.11111"     $ nf (fmap f2Intermediate) (replicate samples 0.11111)
-            , bench "0.111111"    $ nf (fmap f2Intermediate) (replicate samples 0.111111)
-            , bench "0.1111111"   $ nf (fmap f2Intermediate) (replicate samples 0.1111111)
-            , bench "0.11111111"  $ nf (fmap f2Intermediate) (replicate samples 0.11111111)
+        [ bgroup "fold"
+            [ benchB "foldMap f2s        " floatData $ foldMap (formatFloat FFGeneric Nothing)
+            , benchB "foldMap show float " floatData $ foldMap (BB.string7 . show)
+            , benchB "foldMap d2s        " doubleData $ foldMap (formatDouble FFGeneric Nothing)
+            , benchB "foldMap show double" doubleData $ foldMap (BB.string7 . show)
             ]
-        , bgroup "f2s E Buffered" $ suite' nfAppIO (sequence . fmap (f2sBuffered fp))
-        , bgroup "f2s E BS" $ suite nf f2sScientific'
-        , bgroup "f2s F BS" $ suite nf f2sFixed'
-        , bgroup "f2s G BS" $ suite nf f2sGeneral
-        , bgroup "d2Intermediate" $ dsuite nf d2Intermediate
-        , bgroup "d2s E BS" $ dsuite nf d2sScientific'
-        , bgroup "showEFloat" $ suite nf (flip (showEFloat Nothing) [])
-        , bgroup "showEDouble" $ dsuite nf (flip (showEFloat Nothing) [])
-        , bgroup "showFFloat" $ suite nf (flip (showFFloat Nothing) [])
+        , bgroup "intermdiate"
+            [ bench "fmap f2Intermediate" $ nf (fmap f2Intermediate) floatData
+            , bench "fmap d2Intermediate" $ nf (fmap d2Intermediate) doubleData
+            ]
         ]
