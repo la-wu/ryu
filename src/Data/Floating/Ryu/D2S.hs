@@ -3,14 +3,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Data.Floating.Ryu.D2S
-    where
-    -- ( d2s
-    -- , d2sScientific
-    -- , d2sScientific'
-    -- , d2s'
-    -- , d2Intermediate
-    -- , FloatingDecimal(..)
-    -- ) where
+    ( d2s
+    , d2sScientific
+    , d2sScientific'
+    , d2s'
+    , d2Intermediate
+    , FloatingDecimal(..)
+    ) where
 
 import Debug.Trace
 import Data.Array.Base (UArray(..))
@@ -39,8 +38,8 @@ double_bias :: Word64
 double_bias = 1023
 
 data FloatingDecimal = FloatingDecimal
-    { mantissa :: Word64
-    , exponent :: Int32
+    { mantissa :: !Word64
+    , exponent :: !Int32
     } deriving (Show, Eq)
 
 toS :: Word64 -> Int64

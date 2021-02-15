@@ -48,8 +48,8 @@ float_bias :: Word32
 float_bias = 127
 
 data FloatingDecimal = FloatingDecimal
-    { mantissa :: Word32
-    , exponent :: Int32
+    { mantissa :: !Word32
+    , exponent :: !Int32
     } deriving (Show, Eq)
 
 toS :: Word32 -> Int32
@@ -274,8 +274,7 @@ f2sScientific' f = BP.primBounded (f2s' toCharsScientific special f) ()
 -- manual long division
 largeFloatToChars :: Bool -> Word32 -> Int32 -> BB.Builder
 largeFloatToChars sign mantissa exponent =
-    let toBS = BB.toLazyByteStringWith (BB.safeStrategy 128 BB.smallChunkSize) BL.empty
-        signB = if sign then BB.char7 '-' else mempty
+    let signB = if sign then BB.char7 '-' else mempty
      in signB <> BB.integerDec (toInteger mantissa .<< exponent)
 
 fixupLargeFixed :: Float -> Maybe (BP.BoundedPrim ()) -> BB.Builder
