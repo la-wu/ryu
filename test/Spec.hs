@@ -83,9 +83,9 @@ main = hspec $ do
             f2sScientific (coerceToFloat 0x00000001) `shouldBe` "1.0e-45"
 
         it "boundary round" $ do
-            f2sScientific 3.355445e7   `shouldBe` "3.355445e7"
-            f2sScientific 8.999999e9   `shouldBe` "9.0e9"
-            f2sScientific 3.4366717e10 `shouldBe` "3.436672e10"
+            f2sScientific 3.355445e7   `shouldBe` "3.3554448e7"
+            f2sScientific 8.999999e9   `shouldBe` "8.999999e9"
+            f2sScientific 3.4366717e10 `shouldBe` "3.4366718e10"
 
         it "exact value round" $ do
             f2sScientific 3.0540412e5 `shouldBe` "3.0540413e5"
@@ -335,7 +335,7 @@ main = hspec $ do
             d2s 2.98023223876953125e-8 `shouldBe` "2.9802322387695313e-8"
 
         it "regression" $ do
-            d2s (-2.109808898695963e16) `shouldBe` "-2.109808898695963e16"
+            d2s (-2.109808898695963e16) `shouldBe` "-2.1098088986959632e16"
             d2s 4.940656e-318           `shouldBe` "4.940656e-318"
             d2s 1.18575755e-316         `shouldBe` "1.18575755e-316"
             d2s 2.989102097996e-312     `shouldBe` "2.989102097996e-312"

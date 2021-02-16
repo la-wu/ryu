@@ -108,7 +108,7 @@ mulPow5InvDivPow2 m q j = mulShift64Unboxed m (get_double_pow5_inv_split (word2I
 
 
 acceptBounds :: Word64 -> Bool
-acceptBounds v = v `quot` 4 .&. 1 == 0
+acceptBounds (W64# v) = boxToBool (acceptBoundsUnboxed v)
 
 data BoundsState = BoundsState
     { vu :: Word64

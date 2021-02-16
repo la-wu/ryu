@@ -84,7 +84,7 @@ mulPow5DivPow2 :: Word# -> Int# -> Int# -> Word#
 mulPow5DivPow2 m i j = mulShift32Unboxed m (get_float_pow5_split i) j
 
 acceptBounds :: Word32 -> Bool
-acceptBounds v = v `quot` 4 .&. 1 == 0
+acceptBounds (W32# v) = boxToBool (acceptBoundsUnboxed v)
 
 data BoundsState = BoundsState
     { vu :: Word32

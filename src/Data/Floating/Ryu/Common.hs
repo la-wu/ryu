@@ -172,7 +172,9 @@ log10pow5Unboxed :: Int# -> Int#
 log10pow5Unboxed e = (e *# 732928#) `uncheckedIShiftRL#` 20#
 
 acceptBoundsUnboxed :: Word# -> Int#
-acceptBoundsUnboxed v = ((v `uncheckedShiftRL#` 2#) `and#` 1##) `eqWord#` 0##
+acceptBoundsUnboxed v = 0#
+-- for round-to-even and correct shortest
+-- acceptBoundsUnboxed v = ((v `uncheckedShiftRL#` 2#) `and#` 1##) `eqWord#` 0##
 
 fquot10 :: Word# -> Word#
 fquot10 w = (w `timesWord#` 0xCCCCCCCD##) `uncheckedShiftRL#` 35#
