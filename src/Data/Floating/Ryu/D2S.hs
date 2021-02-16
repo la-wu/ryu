@@ -128,8 +128,8 @@ trimTrailing' d
              , vv = vv'
              , vw = vw'
              , lastRemovedDigit = vvRem
-             , vuIsTrailingZeros = vuRem == 0
-             , vvIsTrailingZeros = lastRemovedDigit d == 0
+             , vuIsTrailingZeros = vuIsTrailingZeros d && vuRem == 0
+             , vvIsTrailingZeros = vvIsTrailingZeros d && lastRemovedDigit d == 0
              }
   | otherwise = (d, 0)
   where
@@ -146,7 +146,7 @@ trimTrailing'' d
              , vv = vv'
              , vw = vw'
              , lastRemovedDigit = vvRem
-             , vvIsTrailingZeros = lastRemovedDigit d == 0
+             , vvIsTrailingZeros = vvIsTrailingZeros d && lastRemovedDigit d == 0
              }
   | otherwise = (d, 0)
   where

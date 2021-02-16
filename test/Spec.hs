@@ -128,6 +128,8 @@ main = hspec $ do
             f2sScientific 1.00014165e-36 `shouldBe` "1.00014165e-36"
             f2sScientific 200.0          `shouldBe` "2.0e2"
             f2sScientific 3.3554432e7    `shouldBe` "3.3554432e7"
+            f2sScientific 2.0019531      `shouldBe` "2.0019531e0"
+            f2sScientific 2.001953       `shouldBe` "2.001953e0"
 
         it "looks like power of 5" $ do
             f2sScientific (coerceToFloat 0x5D1502F9) `shouldBe` "6.7108864e17"
