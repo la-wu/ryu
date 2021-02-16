@@ -17,6 +17,7 @@ module Data.Floating.Ryu.Common
     , pow5bitsUnboxed
     , log10pow2Unboxed
     , log10pow5Unboxed
+    , pow5_factor
     , multipleOfPowerOf5_Unboxed
     , multipleOfPowerOf5_UnboxedB
     , multipleOfPowerOf2Unboxed
@@ -250,7 +251,7 @@ unbox (I# i) = i
 
 pow5_factor :: Word# -> Int# -> Int#
 pow5_factor w count
-  = let (# q, r #) = fquotRem5 w
+  = let (# q, r #) = dquotRem5 w
      in case r `eqWord#` 0## of
           0# -> count
           1# -> pow5_factor q (count +# 1#)
