@@ -36,10 +36,8 @@ tests:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
     - -g
+    - -O2
     dependencies:
     - ryu
     - hspec

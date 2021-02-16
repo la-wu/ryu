@@ -3,12 +3,14 @@ import Data.Floating.Ryu.D2S
 import Data.Floating.Ryu.Common
 import Data.Floating.RealFloat
 import Data.Bits
-import Data.Bits.Floating (coerceToFloat)
+import Data.Bits.Floating (coerceToFloat, coerceToWord)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import Data.Char (ord)
 import Data.Int (Int32)
+import Data.List (unfoldr)
 import GHC.Word (Word8, Word32, Word64)
+import Numeric (showHex)
 import Test.Hspec
 import Test.QuickCheck
 
@@ -535,3 +537,18 @@ main = hspec $ do
 
         it "floatDec" $ check dec_list floatDec
         it "doubleDec" $ check dec_list doubleDec
+
+        xit "exhaustive float" $ do
+          -- We go through the set of all possible values in stride-sized
+          -- steps, and go through all possible [0,stride) offsets. This gives
+          -- us good coverage across the whole range of floating point numbers
+          -- even in the first loop, which quickly finds systematic errors. We
+          -- use a prime to avoid bit patterns in the floating point number.
+          let stride = 10007
+              stop = 0x7fffffff
+              iteration :: Word32 -> [Float]
+              iteration base = fmap coerceToFloat $ takeWhile (flip (<=) stop) [base + x * stride | x <- [0..]]
+              match xs = do
+                print $ coerceToWord $ head xs
+                fmap (BL.unpack . BB.toLazyByteString . floatDec) xs `shouldBe` fmap dec_list xs
+          mapM_ match $ fmap iteration [0..stride-1]
