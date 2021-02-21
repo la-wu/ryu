@@ -538,17 +538,31 @@ main = hspec $ do
         it "floatDec" $ check dec_list floatDec
         it "doubleDec" $ check dec_list doubleDec
 
-        xit "exhaustive float" $ do
+        it "exhaustive float" $ do
+          pendingWith "Exhaustive check is too slow to run by default"
           -- We go through the set of all possible values in stride-sized
           -- steps, and go through all possible [0,stride) offsets. This gives
           -- us good coverage across the whole range of floating point numbers
           -- even in the first loop, which quickly finds systematic errors. We
           -- use a prime to avoid bit patterns in the floating point number.
           let stride = 10007
-              stop = 0x7fffffff
-              iteration :: Word32 -> [Float]
-              iteration base = fmap coerceToFloat $ takeWhile (flip (<=) stop) [base + x * stride | x <- [0..]]
+              stop = 2^32 `div` 2 - 1
+              iteration :: Integer -> [Float]
+              iteration base = fmap (coerceToFloat . fromIntegral) $ takeWhile (flip (<=) stop) [base + x * stride | x <- [0..]]
               match xs = do
                 print $ coerceToWord $ head xs
                 fmap (BL.unpack . BB.toLazyByteString . floatDec) xs `shouldBe` fmap dec_list xs
+          mapM_ match $ fmap iteration [0..stride-1]
+
+        it "exhaustive double" $ do
+          pendingWith "Exhaustive check is too slow to run by default"
+          -- same as above but for doubles. this will not complete in any
+          -- reasonable amount of time so stop when satisfied
+          let stride = 1000000000000037
+              stop = 2^64 `div` 2 - 1
+              iteration :: Integer -> [Double]
+              iteration base = fmap (coerceToFloat . fromIntegral) $ takeWhile (flip (<=) stop) [base + x * stride | x <- [0..]]
+              match xs = do
+                print $ coerceToWord $ head xs
+                fmap (BL.unpack . BB.toLazyByteString . doubleDec) xs `shouldBe` fmap dec_list xs
           mapM_ match $ fmap iteration [0..stride-1]
