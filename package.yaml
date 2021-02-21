@@ -27,6 +27,7 @@ dependencies:
 - wide-word
 - ghc-prim
 - template-haskell
+- quote-quot
 
 library:
   source-dirs: src

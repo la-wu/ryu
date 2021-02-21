@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE Strict #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MagicHash, UnboxedTuples #-}
@@ -69,6 +70,7 @@ import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import Foreign.Marshal.Utils (moveBytes)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr, castPtr)
 import Foreign.Storable (poke)
+import Numeric.QuoteQuot
 import System.IO.Unsafe (unsafeDupablePerformIO)
 
 {-# INLINABLE (.>>) #-}
@@ -141,7 +143,7 @@ pokeAll s ptr = foldM pokeOne ptr s
   where pokeOne ptr c = poke ptr (BS.c2w c) >> return (ptr `plusPtr` 1)
 
 boundString :: String -> BP.BoundedPrim ()
-boundString s = BP.boudedPrim maxEncodedLength $ const (pokeAll s)
+boundString s = BP.boundedPrim maxEncodedLength $ const (pokeAll s)
 
 --         Sign -> Exp  -> Mantissa
 special :: Bool -> Bool -> Bool -> BP.BoundedPrim ()
@@ -176,67 +178,83 @@ acceptBoundsUnboxed v = 0#
 -- for round-to-even and correct shortest
 -- acceptBoundsUnboxed v = ((v `uncheckedShiftRL#` 2#) `and#` 1##) `eqWord#` 0##
 
+funbox :: Word32 -> Word#
+funbox (W32# w) = w
+
+funboxPair :: (Word32, Word32) -> (# Word#, Word# #)
+funboxPair ((W32# w), (W32# v)) = (# w, v #)
+
+{-# INLINE fquot10 #-}
 fquot10 :: Word# -> Word#
-fquot10 w = (w `timesWord#` 0xCCCCCCCD##) `uncheckedShiftRL#` 35#
+fquot10 w = funbox $ $$(quoteQuot (10 :: Word32)) (W32# w)
 
+{-# INLINE frem10 #-}
 frem10 :: Word# -> Word#
-frem10 w = let w' = fquot10 w
-           in w `minusWord#` (w' `timesWord#` 10##)
+frem10 w = funbox $ $$(quoteRem (10 :: Word32)) (W32# w)
 
+{-# INLINE fquotRem10 #-}
 fquotRem10 :: Word# -> (# Word#, Word# #)
-fquotRem10 w = let w' = fquot10 w
-               in (# w', w `minusWord#` (w' `timesWord#` 10##) #)
+fquotRem10 w = funboxPair $ fquotRem10Boxed (W32# w)
 
-fquot5 :: Word# -> Word#
-fquot5 w = (w `timesWord#` 0xCCCCCCCD##) `uncheckedShiftRL#` 34#
-
-frem5 :: Word# -> Word#
-frem5 w = let w' = fquot5 w
-          in w `minusWord#` (w' `timesWord#` 5##)
-
-fquotRem5 :: Word# -> (# Word#, Word# #)
-fquotRem5 w = let w' = fquot5 w
-              in (# w', w `minusWord#` (w' `timesWord#` 5##) #)
-
+{-# INLINE fquotRem10Boxed #-}
 fquotRem10Boxed :: Word32 -> (Word32, Word32)
-fquotRem10Boxed (W32# w) = let (# q, r #) = fquotRem10 w in (W32# q, W32# r)
+fquotRem10Boxed = $$(quoteQuotRem (10 :: Word32))
 
+{-# INLINE fquot5 #-}
+fquot5 :: Word# -> Word#
+fquot5 w = funbox $ $$(quoteQuot (5 :: Word32)) (W32# w)
+
+{-# INLINE frem5 #-}
+frem5 :: Word# -> Word#
+frem5 w = funbox $ $$(quoteRem (5 :: Word32)) (W32# w)
+
+{-# INLINE fquotRem5 #-}
+fquotRem5 :: Word# -> (# Word#, Word# #)
+fquotRem5 w = funboxPair $ $$(quoteQuotRem (5 :: Word32)) (W32# w)
+
+{-# INLINE fwrapped #-}
 fwrapped :: (Word# -> Word#) -> Word32 -> Word32
 fwrapped f (W32# w) = W32# (f w)
 
+dunbox :: Word64 -> Word#
+dunbox (W64# w) = w
+
+dunboxPair :: (Word64, Word64) -> (# Word#, Word# #)
+dunboxPair ((W64# w), (W64# v)) = (# w, v #)
+
+{-# INLINE dquot10 #-}
 dquot10 :: Word# -> Word#
-dquot10 w
-  = let (# rdx, rax #) = w `timesWord2#` 0xCCCCCCCCCCCCCCCD##
-     in rdx `uncheckedShiftRL#` 3#
+dquot10 w = dunbox $ $$(quoteQuot (10 :: Word64)) (W64# w)
 
-dquot100 :: Word# -> Word#
-dquot100 w
-  = let (# rdx, rax #) = (w `uncheckedShiftRL#` 2#) `timesWord2#` 0x28F5C28F5C28F5C3##
-     in rdx `uncheckedShiftRL#` 2#
-
+{-# INLINE drem10 #-}
 drem10 :: Word# -> Word#
-drem10 w = let w' = dquot10 w
-           in w `minusWord#` (w' `timesWord#` 10##)
+drem10 w = dunbox $ $$(quoteRem (10 :: Word64)) (W64# w)
 
+{-# INLINE dquotRem10 #-}
 dquotRem10 :: Word# -> (# Word#, Word# #)
-dquotRem10 w = let w' = dquot10 w
-               in (# w', w `minusWord#` (w' `timesWord#` 10##) #)
+dquotRem10 w = dunboxPair $ dquotRem10Boxed (W64# w)
 
-dquot5 :: Word# -> Word#
-dquot5 w = let (# rdx, rax #) = w `timesWord2#` 0xCCCCCCCCCCCCCCCD##
-             in rdx `uncheckedShiftRL#` 2#
-
-drem5 :: Word# -> Word#
-drem5 w = let w' = dquot5 w
-          in w `minusWord#` (w' `timesWord#` 5##)
-
-dquotRem5 :: Word# -> (# Word#, Word# #)
-dquotRem5 w = let w' = dquot5 w
-              in (# w', w `minusWord#` (w' `timesWord#` 5##) #)
-
+{-# INLINE dquotRem10Boxed #-}
 dquotRem10Boxed :: Word64 -> (Word64, Word64)
-dquotRem10Boxed (W64# w) = let (# q, r #) = dquotRem10 w in (W64# q, W64# r)
+dquotRem10Boxed = $$(quoteQuotRem (10 :: Word64))
 
+{-# INLINE dquot5 #-}
+dquot5 :: Word# -> Word#
+dquot5 w = dunbox $ $$(quoteQuot (5 :: Word64)) (W64# w)
+
+{-# INLINE drem5 #-}
+drem5 :: Word# -> Word#
+drem5 w = dunbox $ $$(quoteRem (5 :: Word64)) (W64# w)
+
+{-# INLINE dquotRem5 #-}
+dquotRem5 :: Word# -> (# Word#, Word# #)
+dquotRem5 w = dunboxPair $ $$(quoteQuotRem (5 :: Word64)) (W64# w)
+
+{-# INLINE dquot100 #-}
+dquot100 :: Word# -> Word#
+dquot100 w = dunbox $ $$(quoteQuot (100 :: Word64)) (W64# w)
+
+{-# INLINE dwrapped #-}
 dwrapped :: (Word# -> Word#) -> Word64 -> Word64
 dwrapped f (W64# w) = W64# (f w)
 
@@ -278,24 +296,19 @@ instance Mantissa Word32 where
     decimalLength = decimalLength9
     max_representable_pow10 = const 10
     max_shifted_mantissa = listArray (0, 10) [ (2^24 - 1) `quot` 5^x | x <- [0..10] ]
-    quotRem100 (W32# w)
-      = let w' = (w `timesWord#` 0x51EB851F##) `uncheckedShiftRL#` 37#
-         in (W32# w', W32# (w `minusWord#` (w' `timesWord#` 100##)))
-    quotRem10000 (W32# w)
-      = let w' = (w `timesWord#` 0xD1B71759##) `uncheckedShiftRL#` 45#
-         in (W32# w', W32# (w `minusWord#` (w' `timesWord#` 10000##)))
+    {-# INLINE quotRem100 #-}
+    quotRem100 = $$(quoteQuotRem (100 :: Word32))
+    {-# INLINE quotRem10000 #-}
+    quotRem10000 = $$(quoteQuotRem (10000 :: Word32))
 
 instance Mantissa Word64 where
     decimalLength = decimalLength17
     max_representable_pow10 = const 22
     max_shifted_mantissa = listArray (0, 22) [ (2^53- 1) `quot` 5^x | x <- [0..22] ]
-    quotRem100 (W64# w)
-      = let w' = dquot100 w
-         in (W64# w', W64# (w `minusWord#` (w' `timesWord#` 100##)))
-    quotRem10000 (W64# w)
-      = let (# rdx, rax #) = w `timesWord2#` 0x346DC5D63886594B##
-            w' = rdx `uncheckedShiftRL#` 11#
-         in (W64# w', W64# (w `minusWord#` (w' `timesWord#` 10000##)))
+    {-# INLINE quotRem100 #-}
+    quotRem100 = $$(quoteQuotRem (100 :: Word64))
+    {-# INLINE quotRem10000 #-}
+    quotRem10000 = $$(quoteQuotRem (10000 :: Word64))
 
 type DigitStore = Word16
 
@@ -372,7 +385,7 @@ writeSign ptr False = return ptr
 {-# SPECIALIZE toCharsScientific :: Bool -> Word32 -> Int32 -> BP.BoundedPrim () #-}
 {-# SPECIALIZE toCharsScientific :: Bool -> Word64 -> Int32 -> BP.BoundedPrim () #-}
 toCharsScientific :: (Mantissa a) => Bool -> a -> Int32 -> BP.BoundedPrim ()
-toCharsScientific sign mantissa exponent = BP.boudedPrim maxEncodedLength $ \_ p0 -> do
+toCharsScientific sign mantissa exponent = BP.boundedPrim maxEncodedLength $ \_ p0 -> do
     let olength = decimalLength mantissa
         exp = exponent + fromIntegral olength - 1
     p1 <- writeSign p0 sign
@@ -494,7 +507,7 @@ toCharsFixed sign mantissa exponent =
         wholeDigits = fromIntegral olength + exponent
 
         wrap :: (Ptr Word8 -> IO (Ptr Word8)) -> BP.BoundedPrim ()
-        wrap f = BP.boudedPrim maxEncodedLength $ const f
+        wrap f = BP.boundedPrim maxEncodedLength $ const f
 
         case1 :: Ptr Word8 -> IO (Ptr Word8)
         case1 p0 = do

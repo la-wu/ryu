@@ -11,9 +11,16 @@ packages:
       sha256: 7781f2d8996de5910f986272598eda640372a953b21153804eb2712194653c1f
   original:
     hackage: floating-bits-0.3.0.0@sha256:742bcfcbc21b8daffc995990ee2399ab49550e8f4dd0dff1732d18f57a064c83,2442
+- completed:
+    hackage: quote-quot-0.2.0.0@sha256:b9a29d9408ddc4e5802aa1a26d4eeef438703ce93644c1be38bb2edde87240e7,1627
+    pantry-tree:
+      size: 383
+      sha256: 2ceae8da42ae142be5c3e79fbbf09cbbe6a06df644b8d987939f938cf4899dea
+  original:
+    hackage: quote-quot-0.2.0.0
 snapshots:
 - completed:
-    size: 491373
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/15/3.yaml
-    sha256: 29e9ff61b8bf4b4fcff55cde3ac106ebb971f0d21331dccac9eee63374fa6ca8
-  original: lts-15.3
+    size: 563103
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/17/4.yaml
+    sha256: f11e2153044f5f71ea7b1c9398f4721f517c9bd37642ed769647b896564021f3
+  original: lts-17.4
